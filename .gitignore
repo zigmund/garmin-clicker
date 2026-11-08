@@ -1,0 +1,32 @@
+# Документация (спеки, планы) — локально, не в git
+docs/
+
+# Всё, что касается AI-агентов
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.md
+**/CLAUDE.local.md
+AGENTS.md
+**/AGENTS.md
+.claude/
+.mcp.json
+.superpowers/
+memory/
+.cursor/
+.cursorrules
+.codex/
+.aider*
+.windsurf/
+.windsurfrules
+GEMINI.md
+.gemini/
+
+# Сборка
+.build/
+mac/build/
+.DS_Store
+
+# Connect IQ
+watch/bin/
+watch/gen/
+watch/dist/
