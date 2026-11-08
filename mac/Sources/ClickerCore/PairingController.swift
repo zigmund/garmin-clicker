@@ -135,14 +135,22 @@ public final class PairingController {
         return true
     }
 
+    /// Unpairs the watch. A pending approval is cancelled (its request named the
+    /// forgotten watch as the one being replaced): that central gets `rejected`,
+    /// without a cooldown, and may send HELLO again for a fresh request.
     public func forget() -> [StatusUpdate] {
         store.paired = nil
+        let cancelled = pendingApproval?.central
+        pendingApproval = nil
         var updates: [StatusUpdate] = []
         for (central, var session) in sessions {
             session.helloWatchID = nil
             sessions[central] = session
-            if session.subscribed { updates.append(StatusUpdate(central: central, status: .awaitingHello)) }
+            if session.subscribed && central != cancelled {
+                updates.append(StatusUpdate(central: central, status: .awaitingHello))
+            }
         }
+        if let cancelled { updates.append(StatusUpdate(central: cancelled, status: .rejected)) }
         return updates
     }
 

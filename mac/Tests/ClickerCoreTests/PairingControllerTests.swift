@@ -287,6 +287,25 @@ struct PairingControllerTests {
         #expect(f.controller.advertisingMode == .off)
     }
 
+    @Test func forgetCancelsPendingApproval() {
+        let f = Fixture()
+        f.pairA()
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.b)
+        #expect(f.controller.handleWrite(from: f.b, data: hello(idB, "B")).approvalRequest != nil)
+
+        let updates = f.controller.forget()
+        #expect(updates.count == 2)
+        #expect(updates.contains(StatusUpdate(central: f.a, status: .awaitingHello)))
+        #expect(updates.contains(StatusUpdate(central: f.b, status: .rejected)))
+        #expect(f.controller.pendingApproval == nil)
+
+        // No cooldown: a new HELLO from b opens a fresh request with nothing to replace.
+        let r = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        #expect(r.status == .pendingApproval)
+        #expect(r.approvalRequest == ApprovalRequest(central: f.b, watch: PairedWatch(id: idB, name: "B"), replacing: nil))
+    }
+
     @Test func macIDProxiesStore() {
         let f = Fixture()
         #expect(f.controller.macID == f.store.macID)
