@@ -1,0 +1,156 @@
+name: Release
+
+# Manual: Actions → Release → Run workflow (from main), choose which part of the version to bump.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+# bash -eo pipefail: a failing command in a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release
+
+jobs:
+  version:
+    name: Next version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      commit: ${{ steps.next.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Source of truth: the latest vX.Y.Z tag. No tags yet → 0.0.1.
+      - id: next
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          last=$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || true)
+          if [ -z "$last" ]; then
+            next=0.0.1
+          else
+            IFS=. read -r major minor patch <<< "${last#v}"
+            case "$BUMP" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              *)     patch=$((patch + 1)) ;;
+            esac
+            next="$major.$minor.$patch"
+          fi
+          if git rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+            echo "::error::Tag v$next already exists"
+            exit 1
+          fi
+          echo "Releasing $next (previous: ${last:-none})"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+  watch:
+    name: Watch app
+    needs: version
+    runs-on: ubuntu-latest
+    # Secrets live in the "release" environment, limited to the main branch.
+    environment: release
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      COMMIT: ${{ needs.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Store updates must be signed with the same key as the app's first upload.
+      - name: Developer key
+        env:
+          CIQ_DEVELOPER_KEY_BASE64: ${{ secrets.CIQ_DEVELOPER_KEY_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/key"
+          echo "$CIQ_DEVELOPER_KEY_BASE64" | base64 -d > "$RUNNER_TEMP/key/developer_key.der"
+          test -s "$RUNNER_TEMP/key/developer_key.der" || { echo "::error::Secret CIQ_DEVELOPER_KEY_BASE64 is missing"; exit 1; }
+
+      - name: Build .iq and per-model .prg
+        run: scripts/ciq-docker.sh "$RUNNER_TEMP/key" set-manifest-version dist VERSION="$VERSION" COMMIT="$COMMIT"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: watch
+          path: watch/dist/*
+          if-no-files-found: error
+
+  mac:
+    name: Mac app
+    needs: version
+    runs-on: macos-26
+    # Secrets live in the "release" environment, limited to the main branch.
+    environment: release
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      COMMIT: ${{ needs.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: Test
+        run: make -C mac test
+
+      # The self-signed "Garmin Clicker Local" identity: the same signature as local builds,
+      # so macOS keeps the Accessibility permission across updates.
+      - name: Import signing certificate
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: mac/scripts/ci-import-cert.sh >> "$GITHUB_ENV"   # prints only KEYCHAIN=<path>
+
+      - name: Build and zip
+        run: |
+          make -C mac zip VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" COMMIT="$COMMIT" \
+            SIGN_IDENTITY="Garmin Clicker Local" KEYCHAIN="$KEYCHAIN"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: mac
+          path: mac/build/GarminClicker-macOS-*.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [version, watch, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: assets
+          merge-multiple: true
+
+      # Creates tag vX.Y.Z on the built commit; notes are generated from the commits since the last tag.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l assets
+          gh release create "v$VERSION" assets/* \
+            --target "$GITHUB_SHA" \
+            --title "Clicker $VERSION" \
+            --generate-notes

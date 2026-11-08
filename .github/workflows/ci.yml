@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# bash -eo pipefail: a failing command in a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  watch:
+    name: Watch app (sample devices)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pull requests from forks get no secrets: sign these check builds with a throwaway key.
+      - name: Throwaway developer key
+        run: |
+          mkdir -p "$RUNNER_TEMP/key"
+          openssl genrsa -out "$RUNNER_TEMP/key/key.pem" 4096
+          openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt \
+            -in "$RUNNER_TEMP/key/key.pem" -out "$RUNNER_TEMP/key/developer_key.der"
+
+      # One device per screen class: 260 and 240 MIP, 454 AMOLED, 218, 208, 176 semi-octagon.
+      - name: Build
+        run: |
+          for d in fenix6pro fenix7 fenix847mm fr255s fr55 descentg1; do
+            scripts/ciq-docker.sh "$RUNNER_TEMP/key" build DEVICE="$d" RELEASE=1 \
+              VERSION=0.0.0 COMMIT="${GITHUB_SHA::7}"
+          done
+
+  mac:
+    name: Mac app
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+          swift --version
+
+      - name: Test
+        run: make -C mac test
+
+      - name: Build (ad-hoc signed)
+        run: make -C mac app SIGN_IDENTITY=- VERSION=0.0.0 BUILD="$GITHUB_RUN_NUMBER" COMMIT="${GITHUB_SHA::7}"
