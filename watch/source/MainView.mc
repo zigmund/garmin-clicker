@@ -1,5 +1,6 @@
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
@@ -8,14 +9,21 @@ class MainView extends WatchUi.View {
     private var _link;
     private var _ticker as Timer.Timer? = null;
     private var _lastState as Number = -1;
+    private var _promptPending as Boolean;
 
     function initialize(timer, link) {
         View.initialize();
         _timer = timer;
         _link = link;
+        _promptPending = _link.state() == LinkState.LINK_NOT_PAIRED && !Settings.pairingPromptAnswered();
     }
 
     function onShow() as Void {
+        // First-run question: once, and only now that the main view is actually on top.
+        if (_promptPending) {
+            _promptPending = false;
+            Menus.promptPairing(_link);
+        }
         _ticker = new Timer.Timer();
         (_ticker as Timer.Timer).start(method(:onTick), 1000, true);
     }
@@ -45,25 +53,45 @@ class MainView extends WatchUi.View {
         var statusColor = state == LinkState.LINK_CONNECTED ? Graphics.COLOR_GREEN
             : (state == LinkState.LINK_REJECTED ? Graphics.COLOR_RED : Graphics.COLOR_YELLOW);
         dc.setColor(statusColor, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 22 / 100, Graphics.FONT_SMALL, statusText(state),
+        var statusY = h * 22 / 100;
+        var statusStr = statusText(state);
+        dc.drawText(w / 2, statusY, fitFont(dc, statusStr, statusY, [Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY]), statusStr,
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         var name = _link.macName();
         if (state == LinkState.LINK_CONNECTED && name != null) {
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 31 / 100, Graphics.FONT_XTINY, name,
+            var nameY = h * 31 / 100;
+            dc.drawText(w / 2, nameY, fitFont(dc, name, nameY, [Graphics.FONT_TINY, Graphics.FONT_XTINY]), name,
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         }
 
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h / 2, Graphics.FONT_NUMBER_HOT,
-            PresentationTimer.format(_timer.elapsedSeconds()),
+        var timeStr = PresentationTimer.format(_timer.elapsedSeconds());
+        dc.drawText(w / 2, h / 2, fitFont(dc, timeStr, h / 2, [Graphics.FONT_NUMBER_HOT, Graphics.FONT_NUMBER_MEDIUM]), timeStr,
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 72 / 100, Graphics.FONT_SMALL,
             L10n.t(_timer.isRunning() ? "timer_running" : "timer_paused"),
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+    }
+
+    // Largest font (candidates ordered big to small) whose text fits the chord of the round screen
+    // at row y, minus a margin; the smallest candidate if none fits.
+    private function fitFont(dc as Dc, text as String, y as Number, fonts as Array) as Graphics.FontType {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var r = (w < h ? w : h) / 2.0;
+        var dy = (y - h / 2.0).abs();
+        var chord = dy >= r ? 0.0 : 2.0 * Math.sqrt(r * r - dy * dy);
+        var avail = chord * 0.92 - w * 0.04;
+        for (var i = 0; i < fonts.size(); i++) {
+            if (dc.getTextWidthInPixels(text, fonts[i]) <= avail) {
+                return fonts[i];
+            }
+        }
+        return fonts[fonts.size() - 1];
     }
 
     private function statusText(state as Number) as String {

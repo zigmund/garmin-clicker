@@ -13,8 +13,10 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
         _onUpdate = onUpdate;
     }
 
-    // UP/DOWN/ENTER/ESC go through ButtonMap. ESC is always consumed so the app never exits;
-    // everything else (notably KEY_MENU, the long Up) falls through to BehaviorDelegate -> onMenu.
+    // On device the behaviour callbacks (onBack, onNextPage, ...) may fire before onKey, and a
+    // callback returning true suppresses onKey. Every behaviour we rely on therefore routes through
+    // handleKey with its key, so each press is handled exactly once whichever path arrives first.
+    // KEY_MENU (long Up) is not remappable: it reaches onMenu through BehaviorDelegate.
     function onKey(evt as KeyEvent) as Boolean {
         if (handleKey(evt.getKey())) {
             return true;
@@ -33,7 +35,19 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onBack() as Boolean {
-        return true;
+        return handleKey(WatchUi.KEY_ESC);
+    }
+
+    function onNextPage() as Boolean {
+        return handleKey(WatchUi.KEY_DOWN);
+    }
+
+    function onPreviousPage() as Boolean {
+        return handleKey(WatchUi.KEY_UP);
+    }
+
+    function onSelect() as Boolean {
+        return handleKey(WatchUi.KEY_ENTER);
     }
 
     function onMenu() as Boolean {

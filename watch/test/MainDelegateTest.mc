@@ -144,3 +144,60 @@ function menuAlwaysOpens(logger as Logger) as Boolean {
     Test.assert(opened);
     return true;
 }
+
+(:test)
+function backResetsPausedTimerViaOnBack(logger as Logger) as Boolean {
+    var f = new DelegateFixture();
+    f.timer.toggle();
+    f.now = 3000;
+    f.timer.toggle();
+    var before = f.timer.elapsedSeconds();
+    var handled = f.delegate.onBack();
+    var after = f.timer.elapsedSeconds();
+    f.done();
+    Test.assertEqual(before, 3);
+    Test.assert(handled);
+    Test.assertEqual(after, 0);
+    return true;
+}
+
+(:test)
+function backNeverExitsWhileRunningViaOnBack(logger as Logger) as Boolean {
+    var f = new DelegateFixture();
+    f.timer.toggle();
+    f.now = 7000;
+    var handled = f.delegate.onBack();
+    var running = f.timer.isRunning();
+    var elapsed = f.timer.elapsedSeconds();
+    f.done();
+    Test.assert(handled);
+    Test.assert(running);
+    Test.assertEqual(elapsed, 7);
+    return true;
+}
+
+(:test)
+function backNoneViaOnBack(logger as Logger) as Boolean {
+    var f = new DelegateFixture();
+    Settings.setButtonAction(ButtonMap.BUTTON_BACK, ButtonMap.ACTION_NONE);
+    var handled = f.delegate.onBack();
+    f.done();
+    Test.assert(handled);
+    return true;
+}
+
+(:test)
+function behaviourCallbacksRouteThroughButtonMap(logger as Logger) as Boolean {
+    var f = new DelegateFixture();
+    f.delegate.onNextPage();
+    var next = f.link.lastAction;
+    f.delegate.onPreviousPage();
+    var prev = f.link.lastAction;
+    f.delegate.onSelect();
+    var running = f.timer.isRunning();
+    f.done();
+    Test.assertEqual(next, ButtonMap.ACTION_NEXT);
+    Test.assertEqual(prev, ButtonMap.ACTION_PREVIOUS);
+    Test.assert(running);
+    return true;
+}
