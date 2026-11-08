@@ -25,3 +25,6 @@ GEMINI.md
 .build/
 mac/build/
 .DS_Store
+
+# Connect IQ
+watch/bin/
