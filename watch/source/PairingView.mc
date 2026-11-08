@@ -102,7 +102,8 @@ class PairingView extends WatchUi.View {
                 enterRejected();
             } else if (state == LinkState.LINK_SEARCHING
                     && (_lastState == LinkState.LINK_CONNECTING || _lastState == LinkState.LINK_CONFIRM)) {
-                // Connection failed or approval timed out: back to the list.
+                // Connection failed or the approval request vanished (Status poll read 0x00):
+                // back to the list. There is no approval timeout; Back cancels.
                 Haptics.error();
             }
             if (_index >= _link.candidateNames().size()) {

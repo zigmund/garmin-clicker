@@ -10,9 +10,13 @@ import Toybox.Timer;
 class BleLink extends BluetoothLowEnergy.BleDelegate {
     const FALLBACK_MAC_NAME = "Mac";
     const CONNECT_TIMEOUT_MS = 10000;
-    const CONFIRM_TIMEOUT_MS = 60000;
+    // While waiting for approval on the Mac, Status is also read this often, in case the
+    // result's notify is lost. There is no approval timeout: the Mac's pairing window has none,
+    // and Back on the pairing screen cancels (W-R7).
+    const CONFIRM_POLL_MS = 4000;
+    // Pause before scanning again after the system refused to connect (pairDevice failed).
+    const RETRY_DELAY_MS = 1000;
     const TICK_MS = 500;
-    const MAX_CANDIDATES = 8;
     const MAX_IGNORED = 8;
 
     private var _serviceUuid as BluetoothLowEnergy.Uuid;
@@ -36,11 +40,14 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     private var _targetName as String = FALLBACK_MAC_NAME;
     private var _macInfo as Dictionary? = null;
     private var _connectDeadline as Number? = null;
-    private var _confirmDeadline as Number? = null;
+    private var _nextPollAt as Number? = null;
+    // A HELLO re-sent after a Status notify 0x00 is queued or in flight.
+    private var _resyncQueued as Boolean = false;
+    // Reconnect scan timing (normal mode).
+    private var _schedule as ScanSchedule = new ScanSchedule();
 
-    // Pairing list: parallel arrays of scan results and their advertised names.
-    private var _candidates as Array<BluetoothLowEnergy.ScanResult> = [];
-    private var _candidateNames as Array<String> = [];
+    // Pairing list (ScanResults and their advertised names).
+    private var _candidates as CandidateList;
     // Devices that answered with another Mac's ID during reconnect; skipped while scanning.
     private var _ignored as Array<BluetoothLowEnergy.ScanResult> = [];
 
@@ -53,8 +60,9 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         _pairingAdvUuid = BluetoothLowEnergy.stringToUuid(Protocol.PAIRING_ADV_UUID);
         _queue = new RequestQueue(method(:clock));
         _queue.setOnTimeout(method(:linkLost));
+        _candidates = new CandidateList(method(:sameDevice), FALLBACK_MAC_NAME);
         registerBle();
-        resumeNormal();
+        resumeNormal(0);
     }
 
     // Excluded from the unit-test build (test.jungle excludes :withBle): the runner creates the
@@ -117,8 +125,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     function startPairing() as Void {
         drop();
         _pairing = true;
-        _candidates = [];
-        _candidateNames = [];
+        _candidates.clear();
         setState(LinkState.LINK_SEARCHING);
         setScan(true);
     }
@@ -128,7 +135,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     }
 
     function candidateNames() as Array<String> {
-        return _candidateNames;
+        return _candidates.names();
     }
 
     // Connect to the chosen Mac from the pairing list.
@@ -136,7 +143,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         if (!_pairing || index < 0 || index >= _candidates.size()) {
             return;
         }
-        connect(_candidates[index], _candidateNames[index]);
+        connect(_candidates.item(index) as BluetoothLowEnergy.ScanResult, _candidates.names()[index]);
     }
 
     // Leave pairing (Back on the pairing screen): back to the saved Mac, if any.
@@ -145,7 +152,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             return;
         }
         drop();
-        resumeNormal();
+        resumeNormal(0);
     }
 
     function forget() as Void {
@@ -164,20 +171,22 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
 
     // ---- State machine ----
 
-    private function resumeNormal() as Void {
+    // Search for the saved Mac (if any); holdMs > 0 delays the first scan.
+    private function resumeNormal(holdMs as Number) as Void {
         _pairing = false;
         if (Settings.pairedMac() == null) {
             setScan(false);
             setState(LinkState.LINK_NOT_PAIRED);
         } else {
             setState(LinkState.LINK_SEARCHING);
+            _schedule.start(clock(), holdMs);
             setScan(true);
         }
     }
 
     private function setState(state as Number) as Void {
         _state = state;
-        _confirmDeadline = state == LinkState.LINK_CONFIRM ? clock() + CONFIRM_TIMEOUT_MS : null;
+        _nextPollAt = state == LinkState.LINK_CONFIRM ? clock() + CONFIRM_POLL_MS : null;
         if (state != LinkState.LINK_CONNECTING) {
             _connectDeadline = null;
         }
@@ -207,18 +216,24 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         _target = null;
         _macInfo = null;
         _connectDeadline = null;
-        _confirmDeadline = null;
+        _nextPollAt = null;
     }
 
     // Disconnect, a failed Status read, a timeout, a missing service: start searching again.
     // In pairing mode this returns to the list.
     function linkLost() as Void {
+        restart(0);
+    }
+
+    // holdMs: delay before the reconnect scan resumes (normal mode only; the pairing list,
+    // shown on screen, always scans at once).
+    private function restart(holdMs as Number) as Void {
         drop();
         if (_pairing) {
             setState(LinkState.LINK_SEARCHING);
             setScan(true);
         } else {
-            resumeNormal();
+            resumeNormal(holdMs);
         }
     }
 
@@ -233,7 +248,8 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             System.println("pairDevice failed: " + e.getErrorMessage());
         }
         if (device == null) {
-            linkLost();
+            // Do not hammer the system with immediate retries for the same advertisement.
+            restart(RETRY_DELAY_MS);
             return;
         }
         _device = device;
@@ -242,13 +258,19 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         updateTicker();
     }
 
+    // In normal mode the caller starts _schedule first; turning the scan off ends the schedule.
     private function setScan(on as Boolean) as Void {
         _wantScan = on;
+        if (!on) {
+            _schedule.stop();
+        }
         applyScan();
+        updateTicker();
     }
 
+    // Re-evaluated on every tick: the reconnect scan follows _schedule (retry hold, duty cycle).
     private function applyScan() as Void {
-        var on = _wantScan && _registered;
+        var on = _wantScan && _registered && (_pairing || _schedule.shouldScan(clock()));
         if (on == _scanning) {
             return;
         }
@@ -281,13 +303,29 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             if (_state == LinkState.LINK_REJECTED) {
                 return;
             }
-            if (_pairing) {
-                // The pairing screen shows the rejection, then restarts the list.
-                drop();
-            }
+            // Release the radio either way. Pairing: the pairing screen shows the rejection,
+            // then restarts the list. Otherwise the Mac no longer accepts this watch: stay
+            // "Rejected" without scanning until the user starts pairing or the app restarts.
+            drop();
             setState(LinkState.LINK_REJECTED);
         }
-        // STATUS_AWAITING_HELLO: nothing to do until the next command (it re-sends HELLO).
+        // STATUS_AWAITING_HELLO is handled by the callers (notify: resync; reads: per step).
+    }
+
+    // The Mac dropped our HELLO while connected (it forgot this watch, or another watch replaced
+    // it): introduce ourselves again so the state settles now (Connected or Rejected), not on
+    // the next press. At most one such HELLO is pending.
+    private function resync() as Void {
+        if (_resyncQueued) {
+            return;
+        }
+        _resyncQueued = true;
+        _queue.enqueue(new BleRequest(:hello, method(:issue), method(:onResyncDone), false));
+        updateTicker();
+    }
+
+    function onResyncDone(ok as Boolean) as Void {
+        _resyncQueued = false;
     }
 
     // ---- GATT operations (one in flight; `step` of the current request says which) ----
@@ -319,7 +357,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
                 ok = read(_macInfoUuid);
             } else if (step == :statusRead || step == :cmdStatus || step == :cmdHelloStatus) {
                 ok = read(_statusUuid);
-            } else if (step == :cccd) {
+            } else if (step == :cccd || step == :cmdCccd) {
                 var status = characteristic(_statusUuid);
                 var cccd = status == null ? null : status.getDescriptor(BluetoothLowEnergy.cccdUuid());
                 if (cccd != null) {
@@ -376,6 +414,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         if (status == BluetoothLowEnergy.STATUS_SUCCESS) {
             _registered = true;
             applyScan();
+            updateTicker();
         } else {
             System.println("profile registration failed: " + status);
         }
@@ -385,6 +424,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         if (!_scanning) {
             return;
         }
+        var now = clock();
         var listChanged = false;
         for (var r = scanResults.next(); r != null; r = scanResults.next()) {
             if (!(r instanceof BluetoothLowEnergy.ScanResult)) {
@@ -392,13 +432,16 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             }
             var result = r as BluetoothLowEnergy.ScanResult;
             if (_pairing) {
-                if (advertises(result, _pairingAdvUuid) && addCandidate(result)) {
+                if (advertises(result, _pairingAdvUuid) && _candidates.see(result, result.getDeviceName(), now)) {
                     listChanged = true;
                 }
             } else if (advertises(result, _serviceUuid) && indexOf(_ignored, result) < 0) {
                 connect(result, FALLBACK_MAC_NAME);
                 return;
             }
+        }
+        if (_pairing && _candidates.prune(now)) {
+            listChanged = true;
         }
         if (listChanged) {
             changed();
@@ -453,7 +496,10 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
                     applyStatus(v);
                 }
             } else if (v == Protocol.STATUS_AWAITING_HELLO) {
-                advance(req, :cmdHello);
+                // The Mac lost our session. After its service was re-published (broadcast off/on)
+                // or the app relaunched, our Status subscription is gone too: subscribe again,
+                // then HELLO and one retry.
+                advance(req, :cmdCccd);
             } else {
                 complete(false);
                 applyStatus(v);
@@ -488,7 +534,18 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
 
     function onDescriptorWrite(descriptor as BluetoothLowEnergy.Descriptor, status as BluetoothLowEnergy.Status) as Void {
         var req = _queue.current();
-        if (req == null || req.step != :cccd) {
+        if (req == null) {
+            return;
+        }
+        if (req.step == :cmdCccd) {
+            // Best effort: whether the command is retried is decided by the HELLO that follows.
+            if (status != BluetoothLowEnergy.STATUS_SUCCESS) {
+                System.println("CCCD re-subscribe failed: " + status);
+            }
+            advance(req, :cmdHello);
+            return;
+        }
+        if (req.step != :cccd) {
             return;
         }
         if (status != BluetoothLowEnergy.STATUS_SUCCESS) {
@@ -500,9 +557,17 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     }
 
     function onCharacteristicChanged(characteristic as BluetoothLowEnergy.Characteristic, value as ByteArray) as Void {
-        if (_device != null && characteristic.getUuid().equals(_statusUuid) && value.size() >= 1) {
-            applyStatus(value[0]);
+        if (_device == null || !characteristic.getUuid().equals(_statusUuid) || value.size() < 1) {
+            return;
         }
+        var v = value[0];
+        if (v == Protocol.STATUS_AWAITING_HELLO) {
+            if (_state == LinkState.LINK_CONNECTED) {
+                resync();
+            }
+            return;
+        }
+        applyStatus(v);
     }
 
     private function onMacInfo(info as Dictionary?) as Void {
@@ -529,22 +594,36 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         enqueueSetup(:cccd);
     }
 
-    // ---- Timer: request timeouts, connect and confirmation deadlines ----
+    // ---- Timer: request timeouts, connect deadline, approval poll, scan schedule, list pruning ----
 
     function onTick() as Void {
         var now = clock();
         if (_connectDeadline != null && now >= (_connectDeadline as Number)) {
             linkLost();
-        } else if (_confirmDeadline != null && now >= (_confirmDeadline as Number)) {
-            linkLost();
         } else {
             _queue.tick();
+            pollConfirm(now);
+            if (_pairing && _scanning && _candidates.prune(now)) {
+                changed();
+            }
+            applyScan();
         }
         updateTicker();
     }
 
+    // LINK_CONFIRM: read Status every CONFIRM_POLL_MS (fallback for a lost notify). The read
+    // goes through the :statusRead step: 0x01 → paired, 0x02 → rejected, 0x00 → back to the list.
+    private function pollConfirm(now as Number) as Void {
+        if (_state != LinkState.LINK_CONFIRM || _nextPollAt == null || now < (_nextPollAt as Number) || _queue.pending() > 0) {
+            return;
+        }
+        _nextPollAt = now + CONFIRM_POLL_MS;
+        enqueueSetup(:statusRead);
+    }
+
     private function updateTicker() as Void {
-        var needed = _queue.pending() > 0 || _connectDeadline != null || _confirmDeadline != null;
+        var needed = _queue.pending() > 0 || _connectDeadline != null || _state == LinkState.LINK_CONFIRM
+            || (_wantScan && _registered);
         if (needed && _ticker == null) {
             _ticker = new Timer.Timer();
             (_ticker as Timer.Timer).start(method(:onTick), TICK_MS, true);
@@ -572,20 +651,9 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         return false;
     }
 
-    // Adds a new Mac to the pairing list (or refreshes a known one). True if the list grew.
-    private function addCandidate(result as BluetoothLowEnergy.ScanResult) as Boolean {
-        var i = indexOf(_candidates, result);
-        if (i >= 0) {
-            _candidates[i] = result;
-            return false;
-        }
-        if (_candidates.size() >= MAX_CANDIDATES) {
-            return false;
-        }
-        var name = result.getDeviceName();
-        _candidates.add(result);
-        _candidateNames.add(name != null ? name : FALLBACK_MAC_NAME);
-        return true;
+    // CandidateList's device identity.
+    function sameDevice(a, b) as Boolean {
+        return (a as BluetoothLowEnergy.ScanResult).isSameDevice(b as BluetoothLowEnergy.ScanResult);
     }
 
     private function indexOf(list as Array<BluetoothLowEnergy.ScanResult>, result as BluetoothLowEnergy.ScanResult) as Number {

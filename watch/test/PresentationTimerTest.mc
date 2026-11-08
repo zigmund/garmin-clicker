@@ -52,3 +52,21 @@ function formatCases(logger as Logger) as Boolean {
     Test.assertEqual(PresentationTimer.format(3725), "1:02:05");
     return true;
 }
+
+(:test)
+function forceResetWhileRunning(logger as Logger) as Boolean {
+    var c = new FakeClock();
+    var t = new PresentationTimer(c.method(:read));
+    t.toggle();
+    c.now = 42000;
+    t.forceReset();
+    Test.assertEqual(t.elapsedSeconds(), 0);
+    Test.assert(!t.isRunning());
+    c.now = 50000;
+    Test.assertEqual(t.elapsedSeconds(), 0);
+    // Starting again counts from zero.
+    t.toggle();
+    c.now = 53000;
+    Test.assertEqual(t.elapsedSeconds(), 3);
+    return true;
+}

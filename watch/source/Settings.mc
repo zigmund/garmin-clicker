@@ -11,6 +11,7 @@ module Settings {
     const KEY_BUTTON_MAP = "buttonMap";
     const KEY_LANGUAGE = "language";
     const KEY_PROMPT_ANSWERED = "pairingPromptAnswered";
+    const LANGUAGE_AUTO = "auto";
     const ID_LENGTH = 8;
 
     function isId(value) as Boolean {
@@ -62,10 +63,10 @@ module Settings {
 
     function language() as String {
         var v = Application.Storage.getValue(KEY_LANGUAGE);
-        if (v instanceof String && (v.equals("en") || v.equals("ru"))) {
+        if (v instanceof String && L10n.isSupported(v)) {
             return v;
         }
-        return "auto";
+        return LANGUAGE_AUTO;
     }
 
     function setLanguage(code as String) as Void {
