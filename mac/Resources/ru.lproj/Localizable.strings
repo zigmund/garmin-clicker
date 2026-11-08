@@ -20,6 +20,8 @@
 "language.ru" = "Русский";
 "menu.launchAtLogin" = "Запускать при входе в систему";
 "menu.grantPermission" = "Разрешить управление клавиатурой…";
+"menu.version" = "Версия %@ (%@)";
+"menu.versionOnly" = "Версия %@";
 "menu.quit" = "Выйти из Garmin Clicker";
 "prompt.firstRun.title" = "Часы не привязаны";
 "prompt.firstRun.message" = "Начать привязку часов Garmin сейчас?";

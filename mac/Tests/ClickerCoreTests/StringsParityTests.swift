@@ -19,7 +19,7 @@ struct StringsParityTests {
         "menu.paired", "menu.pairWatch", "menu.forgetWatch", "menu.broadcast",
         "menu.keys", "keys.arrows", "keys.pageUpDown", "keys.space", "menu.language",
         "language.system", "language.en", "language.ru", "menu.launchAtLogin",
-        "menu.grantPermission", "menu.quit",
+        "menu.grantPermission", "menu.version", "menu.versionOnly", "menu.quit",
         "prompt.firstRun.title", "prompt.firstRun.message", "prompt.firstRun.yes", "prompt.firstRun.no",
         "pairing.window.title", "pairing.window.instructions", "pairing.window.waiting",
         "pairing.window.request", "pairing.window.paired", "pairing.window.close", "pairing.window.done",

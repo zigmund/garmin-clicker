@@ -20,6 +20,8 @@
 "language.ru" = "Русский";
 "menu.launchAtLogin" = "Launch at Login";
 "menu.grantPermission" = "Allow Keyboard Control…";
+"menu.version" = "Version %@ (%@)";
+"menu.versionOnly" = "Version %@";
 "menu.quit" = "Quit Garmin Clicker";
 "prompt.firstRun.title" = "No watch paired";
 "prompt.firstRun.message" = "Start pairing with your Garmin watch now?";

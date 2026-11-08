@@ -36,9 +36,21 @@ struct MenuContent: View {
 
         Divider()
 
+        Text(versionText(l))
+            .foregroundStyle(.secondary)
         Button(l("menu.quit")) { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
     }
+}
+
+private func versionText(_ l: L10n) -> String {
+    let info = Bundle.main.infoDictionary
+    return VersionLabel.text(
+        version: info?["CFBundleShortVersionString"] as? String,
+        commit: info?["GCCommit"] as? String,
+        withCommit: l("menu.version", "%@", "%@"),
+        versionOnly: l("menu.versionOnly", "%@")
+    )
 }
 
 struct MenuBarIcon: View {
