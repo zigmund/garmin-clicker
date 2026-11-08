@@ -17,6 +17,9 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     // Pause before scanning again after the system refused to connect (pairDevice failed).
     const RETRY_DELAY_MS = 1000;
     const TICK_MS = 500;
+    // On the fenix 6 the profile registered at app start never gets onProfileRegister (seen on a
+    // device: the retry succeeds). Re-register this often until the system confirms.
+    const REGISTER_RETRY_MS = 3000;
     const MAX_IGNORED = 8;
 
     private var _serviceUuid as BluetoothLowEnergy.Uuid;
@@ -32,6 +35,8 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     private var _state as Number = LinkState.LINK_NOT_PAIRED;
     private var _pairing as Boolean = false;
     private var _registered as Boolean = false;
+    // When to retry registerProfile; null once registered (and always in the unit-test build).
+    private var _registerAt as Number? = null;
     private var _wantScan as Boolean = false;
     private var _scanning as Boolean = false;
 
@@ -82,6 +87,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         } catch (e) {
             System.println("registerProfile failed: " + e.getErrorMessage());
         }
+        _registerAt = clock() + REGISTER_RETRY_MS;
     }
 
     // Unit-test build: no delegate, no profile; the link never scans (not registered).
@@ -413,6 +419,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     function onProfileRegister(uuid as BluetoothLowEnergy.Uuid, status as BluetoothLowEnergy.Status) as Void {
         if (status == BluetoothLowEnergy.STATUS_SUCCESS) {
             _registered = true;
+            _registerAt = null;
             applyScan();
             updateTicker();
         } else {
@@ -601,6 +608,9 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         if (_connectDeadline != null && now >= (_connectDeadline as Number)) {
             linkLost();
         } else {
+            if (_registerAt != null && now >= (_registerAt as Number)) {
+                registerBle();
+            }
             _queue.tick();
             pollConfirm(now);
             if (_pairing && _scanning && _candidates.prune(now)) {
@@ -623,7 +633,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
 
     private function updateTicker() as Void {
         var needed = _queue.pending() > 0 || _connectDeadline != null || _state == LinkState.LINK_CONFIRM
-            || (_wantScan && _registered);
+            || (_wantScan && _registered) || _registerAt != null;
         if (needed && _ticker == null) {
             _ticker = new Timer.Timer();
             (_ticker as Timer.Timer).start(method(:onTick), TICK_MS, true);
