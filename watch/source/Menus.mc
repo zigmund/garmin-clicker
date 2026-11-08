@@ -2,7 +2,7 @@ import Toybox.Lang;
 import Toybox.System;
 import Toybox.WatchUi;
 
-// Menu2-based menus: main menu, settings (buttons / pairing / language) and the first-run prompt.
+// Menu2-based menus: settings (buttons / pairing / language / exit) and the first-run prompt.
 // Each delegate owns its menu and can refresh() the labels (used after a language change).
 module Menus {
     const ACTION_KEYS = ["action_none", "action_next", "action_previous", "action_timer_toggle", "action_timer_reset"];
@@ -33,8 +33,9 @@ module Menus {
         WatchUi.requestUpdate();
     }
 
-    function openMain(timer, link, onUpdate as Method() as Void) as Void {
-        var d = new MainMenuDelegate(timer, link, onUpdate);
+    // Long Up opens the settings menu directly; its last row is Exit.
+    function openSettings(link) as Void {
+        var d = new SettingsMenuDelegate(link);
         WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_UP);
     }
 
@@ -68,53 +69,7 @@ class PairPromptDelegate extends WatchUi.ConfirmationDelegate {
     }
 }
 
-class MainMenuDelegate extends WatchUi.Menu2InputDelegate {
-    private var _menu as WatchUi.Menu2;
-    private var _timer;
-    private var _link;
-    private var _onUpdate as Method() as Void;
-
-    function initialize(timer, link, onUpdate as Method() as Void) {
-        Menu2InputDelegate.initialize();
-        _timer = timer;
-        _link = link;
-        _onUpdate = onUpdate;
-        _menu = new WatchUi.Menu2({:title => ""});
-        _menu.addItem(new WatchUi.MenuItem("", null, :reset, {}));
-        _menu.addItem(new WatchUi.MenuItem("", null, :settings, {}));
-        _menu.addItem(new WatchUi.MenuItem("", null, :exit, {}));
-        refresh();
-    }
-
-    function menu() as WatchUi.Menu2 {
-        return _menu;
-    }
-
-    function refresh() as Void {
-        _menu.setTitle(WatchUi.loadResource(Rez.Strings.AppName) as String);
-        _menu.getItem(0).setLabel(L10n.t("menu_reset_timer"));
-        _menu.getItem(1).setLabel(L10n.t("menu_settings"));
-        _menu.getItem(2).setLabel(L10n.t("menu_exit"));
-        WatchUi.requestUpdate();
-    }
-
-    function onSelect(item as WatchUi.MenuItem) as Void {
-        var id = item.getId();
-        if (id == :reset) {
-            // Unlike Back, the menu resets a running timer too (it ends up paused at zero).
-            _timer.forceReset();
-            _onUpdate.invoke();
-            WatchUi.popView(WatchUi.SLIDE_DOWN);
-        } else if (id == :settings) {
-            var d = new SettingsMenuDelegate(_link, self);
-            WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_LEFT);
-        } else if (id == :exit) {
-            WatchUi.pushView(new WatchUi.Confirmation(L10n.t("menu_exit_confirm")), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
-        }
-    }
-}
-
-// "Exit Garmin Clicker?": the only way out of the app, and never by a single press.
+// "Exit app?": the only way out of the app, and never by a single press.
 class ExitConfirmDelegate extends WatchUi.ConfirmationDelegate {
     function initialize() {
         ConfirmationDelegate.initialize();
@@ -131,16 +86,15 @@ class ExitConfirmDelegate extends WatchUi.ConfirmationDelegate {
 class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
     private var _menu as WatchUi.Menu2;
     private var _link;
-    private var _parent as MainMenuDelegate;
 
-    function initialize(link, parent as MainMenuDelegate) {
+    function initialize(link) {
         Menu2InputDelegate.initialize();
         _link = link;
-        _parent = parent;
         _menu = new WatchUi.Menu2({:title => ""});
         _menu.addItem(new WatchUi.MenuItem("", null, :buttons, {}));
         _menu.addItem(new WatchUi.MenuItem("", null, :pairing, {}));
         _menu.addItem(new WatchUi.MenuItem("", null, :language, {}));
+        _menu.addItem(new WatchUi.MenuItem("", null, :exit, {}));
         refresh();
     }
 
@@ -148,13 +102,13 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         return _menu;
     }
 
-    // Re-label this menu and everything behind it.
     function refresh() as Void {
         _menu.setTitle(L10n.t("menu_settings"));
         _menu.getItem(0).setLabel(L10n.t("settings_buttons"));
         _menu.getItem(1).setLabel(L10n.t("settings_pairing"));
         _menu.getItem(2).setLabel(L10n.t("settings_language"));
-        _parent.refresh();
+        _menu.getItem(3).setLabel(L10n.t("menu_exit"));
+        WatchUi.requestUpdate();
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
@@ -168,6 +122,8 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :language) {
             var d = new LanguageMenuDelegate(self);
             WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_LEFT);
+        } else if (id == :exit) {
+            WatchUi.pushView(new WatchUi.Confirmation(L10n.t("menu_exit_confirm")), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
         }
     }
 }
@@ -214,7 +170,7 @@ class ButtonsMenuDelegate extends WatchUi.Menu2InputDelegate {
 }
 
 class ActionMenuDelegate extends WatchUi.Menu2InputDelegate {
-    private var _menu as WatchUi.Menu2;
+    private var _menu as WatchUi.CheckboxMenu;
     private var _button as Number;
     private var _parent as ButtonsMenuDelegate;
 
@@ -223,13 +179,13 @@ class ActionMenuDelegate extends WatchUi.Menu2InputDelegate {
         _button = button;
         _parent = parent;
         var current = Settings.buttonMap()[button];
-        _menu = new WatchUi.Menu2({:title => L10n.t(Menus.BUTTON_KEYS[button])});
+        _menu = new WatchUi.CheckboxMenu({:title => L10n.t(Menus.BUTTON_KEYS[button])});
         for (var a = 0; a < Menus.ACTION_KEYS.size(); a++) {
             _menu.addItem(new WatchUi.CheckboxMenuItem(L10n.t(Menus.ACTION_KEYS[a]), null, a, a == current, {}));
         }
     }
 
-    function menu() as WatchUi.Menu2 {
+    function menu() as WatchUi.CheckboxMenu {
         return _menu;
     }
 
@@ -268,8 +224,8 @@ class PairingMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
         if (id == :start) {
-            // Once paired, pop the pairing screen plus pairing, settings and main menus.
-            Menus.openPairing(_link, 4);
+            // Once paired, pop the pairing screen plus the pairing and settings menus.
+            Menus.openPairing(_link, 3);
         } else if (id == :forget) {
             WatchUi.pushView(new WatchUi.Confirmation(L10n.t("pairing_forget_confirm")), new ForgetDelegate(_link, self), WatchUi.SLIDE_UP);
         }
@@ -296,13 +252,13 @@ class ForgetDelegate extends WatchUi.ConfirmationDelegate {
 }
 
 class LanguageMenuDelegate extends WatchUi.Menu2InputDelegate {
-    private var _menu as WatchUi.Menu2;
+    private var _menu as WatchUi.CheckboxMenu;
     private var _parent as SettingsMenuDelegate;
 
     function initialize(parent as SettingsMenuDelegate) {
         Menu2InputDelegate.initialize();
         _parent = parent;
-        _menu = new WatchUi.Menu2({:title => ""});
+        _menu = new WatchUi.CheckboxMenu({:title => ""});
         var ids = Menus.languageIds();
         for (var i = 0; i < ids.size(); i++) {
             _menu.addItem(new WatchUi.CheckboxMenuItem("", null, ids[i], false, {}));
@@ -310,7 +266,7 @@ class LanguageMenuDelegate extends WatchUi.Menu2InputDelegate {
         refresh();
     }
 
-    function menu() as WatchUi.Menu2 {
+    function menu() as WatchUi.CheckboxMenu {
         return _menu;
     }
 

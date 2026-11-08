@@ -35,7 +35,7 @@ class MainView extends WatchUi.View {
         stopTicker();
     }
 
-    // "Pair now?" answered yes: open the pairing screen when the confirmation has closed.
+    // "Pair a Mac now?" answered yes: open the pairing screen when the confirmation has closed.
     function onPairNow() as Void {
         _openPairing = true;
     }

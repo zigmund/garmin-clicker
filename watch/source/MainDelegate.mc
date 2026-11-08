@@ -51,7 +51,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onMenu() as Boolean {
-        Menus.openMain(_timer, _link, _onUpdate);
+        Menus.openSettings(_link);
         return true;
     }
 

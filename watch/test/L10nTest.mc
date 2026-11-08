@@ -25,7 +25,7 @@ function resolveAutoFallback(logger as Logger) as Boolean {
 
 (:test)
 function jsonKeySetsMatch(logger as Logger) as Boolean {
-    var expected = ["status_not_paired", "status_searching", "status_connecting", "status_connected", "status_confirm_on_mac", "status_rejected", "timer_running", "timer_paused", "menu_reset_timer", "menu_settings", "menu_exit", "menu_exit_confirm", "settings_buttons", "settings_pairing", "settings_language", "button_up", "button_down", "button_start", "button_back", "action_next", "action_previous", "action_timer_toggle", "action_timer_reset", "action_none", "buttons_reset_defaults", "pairing_current", "pairing_none", "pairing_start", "pairing_forget", "pairing_forget_confirm", "pairing_select_mac", "pairing_no_macs", "pairing_paired", "prompt_pair_now", "language_auto", "language_en", "language_ru"];
+    var expected = ["status_not_paired", "status_searching", "status_connecting", "status_connected", "status_confirm_on_mac", "status_rejected", "timer_running", "timer_paused", "menu_settings", "menu_exit", "menu_exit_confirm", "settings_buttons", "settings_pairing", "settings_language", "button_up", "button_down", "button_start", "button_back", "action_next", "action_previous", "action_timer_toggle", "action_timer_reset", "action_none", "buttons_reset_defaults", "pairing_current", "pairing_none", "pairing_start", "pairing_forget", "pairing_forget_confirm", "pairing_select_mac", "pairing_no_macs", "pairing_paired", "prompt_pair_now", "language_auto", "language_en", "language_ru"];
     // Every language in the table, so a new language is checked as soon as it is added.
     for (var l = 0; l < L10n.LANGUAGES.size(); l++) {
         var code = L10n.LANGUAGES[l][:code] as String;
@@ -63,9 +63,9 @@ function languageTableDrivesEverything(logger as Logger) as Boolean {
 (:test)
 function menuExitConfirmTranslated(logger as Logger) as Boolean {
     L10n.load("en");
-    Test.assertEqual(L10n.t("menu_exit_confirm"), "Exit Garmin Clicker?");
+    Test.assertEqual(L10n.t("menu_exit_confirm"), "Exit app?");
     L10n.load("ru");
-    Test.assertEqual(L10n.t("menu_exit_confirm"), "Выйти из Garmin Clicker?");
+    Test.assertEqual(L10n.t("menu_exit_confirm"), "Выйти?");
     L10n._current = null;
     return true;
 }
