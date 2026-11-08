@@ -30,6 +30,12 @@ class PresentationTimer {
         return true;
     }
 
+    // Menu "Reset timer": works while running too; the timer ends up paused at zero.
+    function forceReset() as Void {
+        _accumulatedMs = 0;
+        _running = false;
+    }
+
     function isRunning() as Boolean {
         return _running;
     }

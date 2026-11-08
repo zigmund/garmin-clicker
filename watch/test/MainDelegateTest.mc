@@ -3,6 +3,7 @@ import Toybox.System;
 import Toybox.Test;
 import Toybox.WatchUi;
 
+(:test)
 class FakeLink {
     var lastAction = null;
     function state() as Number {
@@ -19,6 +20,7 @@ class FakeLink {
 }
 
 // Owns the fake clock and the update counter the delegate reports into.
+(:test)
 class DelegateFixture {
     var now as Number = 0;
     var updates as Number = 0;
@@ -28,7 +30,7 @@ class DelegateFixture {
     private var _saved as Dictionary;
 
     function initialize() {
-        _saved = stashStorage();
+        _saved = TestStorage.stash();
         timer = new PresentationTimer(method(:clock));
         delegate = new MainDelegate(timer, link, method(:updated));
     }
@@ -46,7 +48,7 @@ class DelegateFixture {
     }
 
     function done() as Void {
-        restoreStorage(_saved);
+        TestStorage.restore(_saved);
     }
 }
 

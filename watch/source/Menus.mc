@@ -7,8 +7,24 @@ import Toybox.WatchUi;
 module Menus {
     const ACTION_KEYS = ["action_none", "action_next", "action_previous", "action_timer_toggle", "action_timer_reset"];
     const BUTTON_KEYS = ["button_up", "button_down", "button_start", "button_back"];
-    const LANGUAGE_IDS = ["auto", "en", "ru"];
-    const LANGUAGE_KEYS = ["language_auto", "language_en", "language_ru"];
+    const LANGUAGE_AUTO_KEY = "language_auto";
+
+    // Language menu rows: "Automatic", then one per L10n.LANGUAGES entry.
+    function languageIds() as Array<String> {
+        var ids = [Settings.LANGUAGE_AUTO] as Array<String>;
+        for (var i = 0; i < L10n.LANGUAGES.size(); i++) {
+            ids.add(L10n.LANGUAGES[i][:code] as String);
+        }
+        return ids;
+    }
+
+    function languageLabelKeys() as Array<String> {
+        var keys = [LANGUAGE_AUTO_KEY] as Array<String>;
+        for (var i = 0; i < L10n.LANGUAGES.size(); i++) {
+            keys.add(L10n.LANGUAGES[i][:label] as String);
+        }
+        return keys;
+    }
 
     // Persist the choice, switch the in-memory dictionary and redraw.
     function applyLanguage(code as String) as Void {
@@ -85,15 +101,30 @@ class MainMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
         if (id == :reset) {
-            _timer.reset();
+            // Unlike Back, the menu resets a running timer too (it ends up paused at zero).
+            _timer.forceReset();
             _onUpdate.invoke();
             WatchUi.popView(WatchUi.SLIDE_DOWN);
         } else if (id == :settings) {
             var d = new SettingsMenuDelegate(_link, self);
             WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_LEFT);
         } else if (id == :exit) {
+            WatchUi.pushView(new WatchUi.Confirmation(L10n.t("menu_exit_confirm")), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
+        }
+    }
+}
+
+// "Exit Garmin Clicker?": the only way out of the app, and never by a single press.
+class ExitConfirmDelegate extends WatchUi.ConfirmationDelegate {
+    function initialize() {
+        ConfirmationDelegate.initialize();
+    }
+
+    function onResponse(response as Confirm) as Boolean {
+        if (response == WatchUi.CONFIRM_YES) {
             System.exit();
         }
+        return true;
     }
 }
 
@@ -272,8 +303,9 @@ class LanguageMenuDelegate extends WatchUi.Menu2InputDelegate {
         Menu2InputDelegate.initialize();
         _parent = parent;
         _menu = new WatchUi.Menu2({:title => ""});
-        for (var i = 0; i < Menus.LANGUAGE_IDS.size(); i++) {
-            _menu.addItem(new WatchUi.CheckboxMenuItem("", null, Menus.LANGUAGE_IDS[i], false, {}));
+        var ids = Menus.languageIds();
+        for (var i = 0; i < ids.size(); i++) {
+            _menu.addItem(new WatchUi.CheckboxMenuItem("", null, ids[i], false, {}));
         }
         refresh();
     }
@@ -284,11 +316,13 @@ class LanguageMenuDelegate extends WatchUi.Menu2InputDelegate {
 
     function refresh() as Void {
         var current = Settings.language();
+        var ids = Menus.languageIds();
+        var keys = Menus.languageLabelKeys();
         _menu.setTitle(L10n.t("settings_language"));
-        for (var i = 0; i < Menus.LANGUAGE_IDS.size(); i++) {
+        for (var i = 0; i < ids.size(); i++) {
             var item = _menu.getItem(i) as WatchUi.CheckboxMenuItem;
-            item.setLabel(L10n.t(Menus.LANGUAGE_KEYS[i]));
-            item.setChecked(current.equals(Menus.LANGUAGE_IDS[i]));
+            item.setLabel(L10n.t(keys[i]));
+            item.setChecked(current.equals(ids[i]));
         }
         WatchUi.requestUpdate();
     }
