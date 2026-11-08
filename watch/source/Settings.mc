@@ -11,6 +11,7 @@ module Settings {
     const KEY_BUTTON_MAP = "buttonMap";
     const KEY_LANGUAGE = "language";
     const KEY_PROMPT_ANSWERED = "pairingPromptAnswered";
+    const KEY_DIAGNOSTICS = "diagnostics";
     const LANGUAGE_AUTO = "auto";
     const ID_LENGTH = 8;
 
@@ -71,6 +72,14 @@ module Settings {
 
     function setLanguage(code as String) as Void {
         Application.Storage.setValue(KEY_LANGUAGE, code);
+    }
+
+    function diagnostics() as Boolean {
+        return Application.Storage.getValue(KEY_DIAGNOSTICS) == true;
+    }
+
+    function setDiagnostics(on as Boolean) as Void {
+        Application.Storage.setValue(KEY_DIAGNOSTICS, on);
     }
 
     function pairingPromptAnswered() as Boolean {

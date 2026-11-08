@@ -6,7 +6,7 @@ import Toybox.Test;
 // A module, not global functions: a global (:test) function must be a unit test.
 (:test)
 module TestStorage {
-    const KEYS = ["watchId", "macId", "macName", "buttonMap", "language", "pairingPromptAnswered"];
+    const KEYS = ["watchId", "macId", "macName", "buttonMap", "language", "pairingPromptAnswered", "diagnostics"];
 
     function stash() as Dictionary {
         var saved = {};
@@ -28,6 +28,20 @@ module TestStorage {
             }
         }
     }
+}
+
+(:test)
+function storageDiagnosticsFlag(logger as Logger) as Boolean {
+    var saved = TestStorage.stash();
+    Test.assert(!Settings.diagnostics());
+    Application.Storage.setValue("diagnostics", "yes");
+    Test.assert(!Settings.diagnostics());
+    Settings.setDiagnostics(true);
+    Test.assert(Settings.diagnostics());
+    Settings.setDiagnostics(false);
+    Test.assert(!Settings.diagnostics());
+    TestStorage.restore(saved);
+    return true;
 }
 
 (:test)

@@ -74,6 +74,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     // app for every test, and the profile can be registered only once per process.
     (:withBle)
     private function registerBle() as Void {
+        Diag.regAttempts++;
         BluetoothLowEnergy.setDelegate(self);
         try {
             BluetoothLowEnergy.registerProfile({
@@ -86,6 +87,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             });
         } catch (e) {
             System.println("registerProfile failed: " + e.getErrorMessage());
+            Diag.profile = "EX";
         }
         _registerAt = clock() + REGISTER_RETRY_MS;
     }
@@ -191,6 +193,9 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     }
 
     private function setState(state as Number) as Void {
+        if (state == LinkState.LINK_CONNECTED && _state != LinkState.LINK_CONNECTED) {
+            Diag.connects++;
+        }
         _state = state;
         _nextPollAt = state == LinkState.LINK_CONFIRM ? clock() + CONFIRM_POLL_MS : null;
         if (state != LinkState.LINK_CONNECTING) {
@@ -281,6 +286,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             return;
         }
         _scanning = on;
+        Diag.scanning = on;
         BluetoothLowEnergy.setScanState(on ? BluetoothLowEnergy.SCAN_STATE_SCANNING : BluetoothLowEnergy.SCAN_STATE_OFF);
     }
 
@@ -417,6 +423,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     // ---- BleDelegate callbacks ----
 
     function onProfileRegister(uuid as BluetoothLowEnergy.Uuid, status as BluetoothLowEnergy.Status) as Void {
+        Diag.profile = status.toString();
         if (status == BluetoothLowEnergy.STATUS_SUCCESS) {
             _registered = true;
             _registerAt = null;
@@ -433,11 +440,15 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         }
         var now = clock();
         var listChanged = false;
+        var diag = Diag.isOn();
         for (var r = scanResults.next(); r != null; r = scanResults.next()) {
             if (!(r instanceof BluetoothLowEnergy.ScanResult)) {
                 continue;
             }
             var result = r as BluetoothLowEnergy.ScanResult;
+            if (diag) {
+                diagResult(result);
+            }
             if (_pairing) {
                 if (advertises(result, _pairingAdvUuid) && _candidates.see(result, result.getDeviceName(), now)) {
                     listChanged = true;
@@ -452,6 +463,8 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         }
         if (listChanged) {
             changed();
+        } else if (diag) {
+            WatchUi.requestUpdate(); // refresh the counters
         }
     }
 
@@ -650,6 +663,19 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
     }
 
     // ---- Helpers ----
+
+    private function diagResult(result as BluetoothLowEnergy.ScanResult) as Void {
+        Diag.scanResults++;
+        var name = result.getDeviceName();
+        if (name != null) {
+            Diag.lastName = name;
+        }
+        var first = result.getServiceUuids().next();
+        if (first != null) {
+            Diag.withUuids++;
+            Diag.lastUuid = (first as BluetoothLowEnergy.Uuid).toString().substring(0, 13) as String;
+        }
+    }
 
     private function advertises(result as BluetoothLowEnergy.ScanResult, uuid as BluetoothLowEnergy.Uuid) as Boolean {
         var uuids = result.getServiceUuids();

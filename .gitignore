@@ -28,3 +28,4 @@ mac/build/
 
 # Connect IQ
 watch/bin/
+watch/gen/

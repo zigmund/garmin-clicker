@@ -100,6 +100,12 @@ class MainView extends WatchUi.View {
         dc.drawText(w / 2, h * 72 / 100, Graphics.FONT_SMALL,
             L10n.t(_timer.isRunning() ? "timer_running" : "timer_paused"),
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+
+        if (Diag.isOn()) {
+            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h * 84 / 100, Graphics.FONT_XTINY, Diag.mainLine(),
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
     }
 
     // Largest font (candidates ordered big to small) whose text fits the chord of the round screen

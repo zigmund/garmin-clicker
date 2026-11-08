@@ -56,6 +56,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSendResult(ok as Boolean) as Void {
+        Diag.sent(ok);
         if (ok) {
             Haptics.success();
         } else {

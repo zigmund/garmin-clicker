@@ -1,4 +1,4 @@
 project.manifest = manifest.xml
-base.sourcePath = source;test
+base.sourcePath = source;test;gen
 # Release/device builds drop the unit-test stubs; test.jungle (make test) flips this.
 base.excludeAnnotations = withoutBle

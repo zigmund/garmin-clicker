@@ -86,14 +86,18 @@ class ExitConfirmDelegate extends WatchUi.ConfirmationDelegate {
 class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
     private var _menu as WatchUi.Menu2;
     private var _link;
+    // Five quick taps on Version toggle the hidden diagnostics.
+    private var _versionTaps as TapCounter;
 
     function initialize(link) {
         Menu2InputDelegate.initialize();
         _link = link;
+        _versionTaps = new TapCounter(method(:clock), 5, 1500);
         _menu = new WatchUi.Menu2({:title => ""});
         _menu.addItem(new WatchUi.MenuItem("", null, :buttons, {}));
         _menu.addItem(new WatchUi.MenuItem("", null, :pairing, {}));
         _menu.addItem(new WatchUi.MenuItem("", null, :language, {}));
+        _menu.addItem(new WatchUi.MenuItem("", null, :version, {}));
         _menu.addItem(new WatchUi.MenuItem("", null, :exit, {}));
         refresh();
     }
@@ -107,8 +111,15 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         _menu.getItem(0).setLabel(L10n.t("settings_buttons"));
         _menu.getItem(1).setLabel(L10n.t("settings_pairing"));
         _menu.getItem(2).setLabel(L10n.t("settings_language"));
-        _menu.getItem(3).setLabel(L10n.t("menu_exit"));
+        var version = _menu.getItem(3);
+        version.setLabel(L10n.t("settings_version"));
+        version.setSubLabel(BuildInfo.VERSION + " (" + BuildInfo.COMMIT + ")" + (Diag.isOn() ? " · diag" : ""));
+        _menu.getItem(4).setLabel(L10n.t("menu_exit"));
         WatchUi.requestUpdate();
+    }
+
+    function clock() as Number {
+        return System.getTimer();
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
@@ -122,6 +133,12 @@ class SettingsMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :language) {
             var d = new LanguageMenuDelegate(self);
             WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_LEFT);
+        } else if (id == :version) {
+            if (_versionTaps.tap()) {
+                Diag.setOn(!Diag.isOn());
+                Haptics.success();
+                refresh();
+            }
         } else if (id == :exit) {
             WatchUi.pushView(new WatchUi.Confirmation(L10n.t("menu_exit_confirm")), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
         }

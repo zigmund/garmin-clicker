@@ -186,6 +186,14 @@ class PairingView extends WatchUi.View {
                 drawList(dc, names);
             }
         }
+        if (Diag.isOn()) {
+            var lines = Diag.pairingLines();
+            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
+            for (var i = 0; i < lines.size(); i++) {
+                dc.drawText(w / 2, h * (70 + i * 8) / 100, Graphics.FONT_XTINY, lines[i],
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            }
+        }
     }
 
     // Selected name in the middle, neighbours above and below.
