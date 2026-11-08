@@ -52,6 +52,8 @@ public final class PairingController {
         var subscribed = false
         /// ID of the watch whose HELLO was accepted in this session.
         var helloWatchID: Data?
+        /// Last HELLO outcome in this session was `rejected`.
+        var rejected = false
     }
 
     private let store: PairingStore
@@ -102,6 +104,15 @@ public final class PairingController {
         return connected ? paired.name : nil
     }
 
+    /// Current Status value for `central`, as a read of the Status
+    /// characteristic returns it. Matches the last notification sent to it.
+    public func status(for central: UUID) -> LinkStatus {
+        if pendingApproval?.central == central { return .pendingApproval }
+        guard let session = sessions[central] else { return .awaitingHello }
+        if let paired = store.paired, session.helloWatchID == paired.id { return .accepted }
+        return session.rejected ? .rejected : .awaitingHello
+    }
+
     public var advertisingMode: AdvertisingMode {
         if isPairingModeActive { return .pairing }
         if !store.broadcastEnabled { return .off }
@@ -145,12 +156,16 @@ public final class PairingController {
         var updates: [StatusUpdate] = []
         for (central, var session) in sessions {
             session.helloWatchID = nil
+            session.rejected = false
             sessions[central] = session
             if session.subscribed && central != cancelled {
                 updates.append(StatusUpdate(central: central, status: .awaitingHello))
             }
         }
-        if let cancelled { updates.append(StatusUpdate(central: cancelled, status: .rejected)) }
+        if let cancelled {
+            sessions[cancelled, default: Session()].rejected = true
+            updates.append(StatusUpdate(central: cancelled, status: .rejected))
+        }
         return updates
     }
 
@@ -184,29 +199,31 @@ public final class PairingController {
     }
 
     private func handleHello(from central: UUID, watch: PairedWatch) -> WriteResult {
-        let rejected = WriteResult(att: .insufficientAuthorization, status: .rejected)
         let pairingActive = isPairingModeActive
-        if !store.broadcastEnabled && !pairingActive {
-            sessions[central, default: Session()].helloWatchID = nil
-            return rejected
-        }
-        if let paired = store.paired, paired.id == watch.id {
-            sessions[central, default: Session()].helloWatchID = watch.id
+        if let paired = store.paired, paired.id == watch.id, store.broadcastEnabled || pairingActive {
+            setHello(central, watchID: watch.id, rejected: false)
             return WriteResult(att: .success, status: .accepted)
         }
-        sessions[central, default: Session()].helloWatchID = nil
-        guard pairingActive else { return rejected }
-        if let until = cooldowns[watch.id], now() < until { return rejected }
-        if let pending = pendingApproval {
+        if let pending = pendingApproval, pending.central == central, pending.watch.id == watch.id {
             // Retry from the same watch while its window is open is not a second request.
-            if pending.central == central && pending.watch.id == watch.id {
-                return WriteResult(att: .success, status: .pendingApproval)
-            }
-            return rejected
+            return WriteResult(att: .success, status: .pendingApproval)
         }
+        let blocked = !pairingActive
+            || cooldowns[watch.id].map { now() < $0 } ?? false
+            || pendingApproval != nil
+        if blocked {
+            setHello(central, watchID: nil, rejected: true)
+            return WriteResult(att: .insufficientAuthorization, status: .rejected)
+        }
+        setHello(central, watchID: nil, rejected: false)
         let request = ApprovalRequest(central: central, watch: watch, replacing: store.paired)
         pendingApproval = request
         return WriteResult(att: .success, status: .pendingApproval, approvalRequest: request)
+    }
+
+    private func setHello(_ central: UUID, watchID: Data?, rejected: Bool) {
+        sessions[central, default: Session()].helloWatchID = watchID
+        sessions[central, default: Session()].rejected = rejected
     }
 
     // MARK: Approval
@@ -217,11 +234,12 @@ public final class PairingController {
         if approved {
             store.paired = pending.watch
             cooldowns[pending.watch.id] = nil
-            sessions[pending.central, default: Session()].helloWatchID = pending.watch.id
+            setHello(pending.central, watchID: pending.watch.id, rejected: false)
             pairingDeadline = nil
             return [StatusUpdate(central: pending.central, status: .accepted)]
         }
         cooldowns[pending.watch.id] = now().addingTimeInterval(Self.denyCooldown)
+        sessions[pending.central, default: Session()].rejected = true
         return [StatusUpdate(central: pending.central, status: .rejected)]
     }
 }
