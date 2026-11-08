@@ -45,7 +45,6 @@ public struct WriteResult: Equatable, Sendable {
 }
 
 public final class PairingController {
-    public static let pairingDuration: TimeInterval = 120
     public static let denyCooldown: TimeInterval = 60
 
     private struct Session {
@@ -61,7 +60,7 @@ public final class PairingController {
     private let now: () -> Date
 
     private var sessions: [UUID: Session] = [:]
-    private var pairingDeadline: Date?
+    private var pairingMode = false
     private var cooldowns: [Data: Date] = [:]
     public private(set) var pendingApproval: ApprovalRequest?
 
@@ -83,20 +82,15 @@ public final class PairingController {
             if !newValue {
                 sessions.removeAll()
                 pendingApproval = nil
-                pairingDeadline = nil
+                pairingMode = false
             }
         }
     }
 
-    public var isPairingModeActive: Bool {
-        pendingApproval != nil || (pairingDeadline.map { now() < $0 } ?? false)
-    }
-
-    public var pairingModeRemaining: TimeInterval? {
-        guard let deadline = pairingDeadline else { return nil }
-        let remaining = deadline.timeIntervalSince(now())
-        return remaining > 0 ? remaining : nil
-    }
+    /// On from `startPairingMode()` until `stopPairingMode()`, an approval,
+    /// or broadcasting turned off. No timeout: the app keeps it on while its
+    /// pairing window is open.
+    public var isPairingModeActive: Bool { pairingMode }
 
     public var connectedWatchName: String? {
         guard let paired = store.paired else { return nil }
@@ -127,13 +121,13 @@ public final class PairingController {
 
     public func startPairingMode() {
         store.broadcastEnabled = true
-        pairingDeadline = now().addingTimeInterval(Self.pairingDuration)
+        pairingMode = true
     }
 
     /// Ends pairing mode. A pending approval is cancelled like `forget()`
     /// does: that central gets `rejected`, without a cooldown.
     public func stopPairingMode() -> [StatusUpdate] {
-        pairingDeadline = nil
+        pairingMode = false
         guard let pending = pendingApproval else { return [] }
         pendingApproval = nil
         sessions[pending.central, default: Session()].rejected = true
@@ -254,7 +248,7 @@ public final class PairingController {
             store.paired = pending.watch
             cooldowns[pending.watch.id] = nil
             setHello(pending.central, watchID: pending.watch.id, rejected: false)
-            pairingDeadline = nil
+            pairingMode = false
             return updates + [StatusUpdate(central: pending.central, status: .accepted)]
         }
         cooldowns[pending.watch.id] = now().addingTimeInterval(Self.denyCooldown)

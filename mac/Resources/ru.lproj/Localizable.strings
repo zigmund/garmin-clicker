@@ -8,7 +8,6 @@
 "status.noInputPermission" = "Нет доступа к управлению клавиатурой";
 "menu.paired" = "Привязаны: %@";
 "menu.pairWatch" = "Подключить часы…";
-"menu.stopPairing" = "Остановить привязку";
 "menu.forgetWatch" = "Забыть часы";
 "menu.broadcast" = "Вещание";
 "menu.keys" = "Клавиши";
@@ -26,7 +25,13 @@
 "prompt.firstRun.message" = "Начать привязку часов Garmin сейчас?";
 "prompt.firstRun.yes" = "Начать привязку";
 "prompt.firstRun.no" = "Не сейчас";
-"approval.title" = "Разрешить «%@» подключиться?";
+"pairing.window.title" = "Привязка часов";
+"pairing.window.instructions" = "На часах откройте Garmin Clicker → Настройки → Привязка → Запустить привязку и выберите «%@».";
+"pairing.window.waiting" = "Ожидание часов…";
+"pairing.window.request" = "«%@» хочет подключиться.";
+"pairing.window.paired" = "Привязано: «%@».";
+"pairing.window.close" = "Закрыть";
+"pairing.window.done" = "Готово";
 "approval.message" = "Эти часы смогут переключать слайды на этом Mac.";
 "approval.replaces" = "Они заменят «%@».";
 "approval.allow" = "Разрешить";

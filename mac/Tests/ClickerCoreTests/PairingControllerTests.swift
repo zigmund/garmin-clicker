@@ -216,15 +216,24 @@ struct PairingControllerTests {
         #expect(f.controller.handleWrite(from: f.a, data: Data([0x7F])).att == .requestNotSupported)
     }
 
-    @Test func pairingModeExpires() {
+    @Test func pairingModeHasNoTimeout() {
         let f = Fixture()
         f.controller.startPairingMode()
-        f.t += 119
+        f.t += 3600
         #expect(f.controller.isPairingModeActive)
-        #expect(f.controller.pairingModeRemaining == 1)
-        f.t += 2
-        #expect(f.controller.isPairingModeActive == false)
-        #expect(f.controller.advertisingMode == .off)
+        #expect(f.controller.advertisingMode == .pairing)
+        let r = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        #expect(r.approvalRequest != nil)
+    }
+
+    @Test func denyKeepsPairingModeActive() {
+        let f = Fixture()
+        f.controller.startPairingMode()
+        f.t += 3600
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        _ = f.controller.resolveApproval(approved: false)
+        #expect(f.controller.isPairingModeActive)
+        #expect(f.controller.advertisingMode == .pairing)
     }
 
     @Test func stopPairingModeEndsPairing() {
@@ -261,15 +270,28 @@ struct PairingControllerTests {
         #expect(r.approvalRequest == ApprovalRequest(central: f.b, watch: PairedWatch(id: idB, name: "B"), replacing: nil))
     }
 
-    @Test func pendingApprovalKeepsPairingModeAlive() {
+    @Test func stopPairingModeWhilePendingEndsPairing() {
+        let f = Fixture()
+        f.pairA()
+        _ = f.controller.centralUnsubscribed(f.a)
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.b)
+        _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        #expect(f.controller.isPairingModeActive)
+        _ = f.controller.stopPairingMode()
+        #expect(f.controller.isPairingModeActive == false)
+        #expect(f.controller.advertisingMode == .reconnect)
+        #expect(f.controller.pairedWatch?.id == idA)
+    }
+
+    @Test func broadcastOffEndsPairingMode() {
         let f = Fixture()
         f.controller.startPairingMode()
-        f.t += 100
         _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
-        f.t = Date(timeIntervalSince1970: 200)
-        #expect(f.controller.isPairingModeActive)
-        _ = f.controller.resolveApproval(approved: false)
+        f.controller.isBroadcastEnabled = false
         #expect(f.controller.isPairingModeActive == false)
+        #expect(f.controller.pendingApproval == nil)
+        #expect(f.controller.advertisingMode == .off)
     }
 
     @Test func unsubscribeWhilePendingCancelsApproval() {
