@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.System;
 import Toybox.WatchUi;
 
 class MainDelegate extends WatchUi.BehaviorDelegate {
@@ -57,6 +58,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
 
     function onSendResult(ok as Boolean) as Void {
         Diag.sent(ok);
+        Flash.done(ok, System.getTimer());
         if (ok) {
             Haptics.success();
         } else {
@@ -67,6 +69,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
 
     private function perform(action as Number) as Void {
         if (action == ButtonMap.ACTION_NEXT || action == ButtonMap.ACTION_PREVIOUS) {
+            Flash.pressed(action, System.getTimer());
             _link.send(action, method(:onSendResult));
         } else if (action == ButtonMap.ACTION_TIMER_TOGGLE) {
             _timer.toggle();
