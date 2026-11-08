@@ -85,6 +85,15 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
                     {:uuid => _macInfoUuid}
                 ]
             });
+        } catch (e instanceof BluetoothLowEnergy.ProfileRegistrationException) {
+            // "Too Many Profiles": our earlier unconfirmed attempts hold the slots (the app has one
+            // profile), so the profile is there. Stop retrying and go on as registered.
+            System.println("registerProfile: " + e.getErrorMessage() + "; assuming registered");
+            Diag.profile = "EX";
+            _registerAt = null;
+            _registered = true;
+            applyScan();
+            return;
         } catch (e) {
             System.println("registerProfile failed: " + e.getErrorMessage());
             Diag.profile = "EX";
