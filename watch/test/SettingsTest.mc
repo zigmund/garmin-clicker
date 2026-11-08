@@ -55,8 +55,9 @@ function storageFallbacksMac(logger as Logger) as Boolean {
     var mac = Settings.pairedMac();
     Test.assert(mac != null);
     Test.assertEqual(mac[:name], "My Mac");
-    Test.assertEqual(mac[:id].size(), 8);
-    Test.assertEqual(mac[:id][7], 8);
+    var macId = (mac as Dictionary)[:id] as ByteArray;
+    Test.assertEqual(macId.size(), 8);
+    Test.assertEqual(macId[7], 8);
     Settings.forgetMac();
     Test.assert(Settings.pairedMac() == null);
     restoreStorage(saved);
