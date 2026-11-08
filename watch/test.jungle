@@ -1,0 +1,3 @@
+# Overrides for the unit-test build (make test): no BLE profile registration, which the test
+# runner would repeat for every test (the app is instantiated per test).
+base.excludeAnnotations = withBle
