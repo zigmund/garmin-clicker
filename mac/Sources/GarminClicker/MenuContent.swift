@@ -1,0 +1,62 @@
+import ClickerCore
+import SwiftUI
+
+struct MenuContent: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        let l = model.l10n
+
+        Text(model.statusTitle)
+        if let paired = model.pairedWatch {
+            Text(l("menu.paired", paired.name))
+        }
+
+        Divider()
+
+        Button(l("menu.pairWatch")) { model.openPairingWindow() }
+        Button(l("menu.forgetWatch")) { model.forgetWatch() }
+            .disabled(model.pairedWatch == nil)
+        if model.pairedWatch != nil {
+            Toggle(l("menu.broadcast"), isOn: $model.isBroadcastEnabled)
+        }
+
+        Divider()
+
+        Picker(l("menu.keys"), selection: $model.keyScheme) {
+            ForEach(KeyScheme.allCases) { Text(l($0.titleKey)).tag($0) }
+        }
+        Picker(l("menu.language"), selection: $model.language) {
+            ForEach(AppLanguage.allCases) { Text(l($0.titleKey)).tag($0) }
+        }
+        Toggle(l("menu.launchAtLogin"), isOn: $model.launchAtLogin)
+        if !model.canPostEvents {
+            Button(l("menu.grantPermission")) { model.requestInputPermission() }
+        }
+
+        Divider()
+
+        Text(versionText(l))
+            .foregroundStyle(.secondary)
+        Button(l("menu.quit")) { NSApplication.shared.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+}
+
+private func versionText(_ l: L10n) -> String {
+    let info = Bundle.main.infoDictionary
+    return VersionLabel.text(
+        version: info?["CFBundleShortVersionString"] as? String,
+        commit: info?["GCCommit"] as? String,
+        withCommit: l("menu.version", "%@", "%@"),
+        versionOnly: l("menu.versionOnly", "%@")
+    )
+}
+
+struct MenuBarIcon: View {
+    let model: AppModel
+
+    var body: some View {
+        Image(systemName: model.status.symbolName)
+    }
+}
