@@ -53,7 +53,14 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         _pairingAdvUuid = BluetoothLowEnergy.stringToUuid(Protocol.PAIRING_ADV_UUID);
         _queue = new RequestQueue(method(:clock));
         _queue.setOnTimeout(method(:linkLost));
+        registerBle();
+        resumeNormal();
+    }
 
+    // Excluded from the unit-test build (test.jungle excludes :withBle): the runner creates the
+    // app for every test, and the profile can be registered only once per process.
+    (:withBle)
+    private function registerBle() as Void {
         BluetoothLowEnergy.setDelegate(self);
         try {
             BluetoothLowEnergy.registerProfile({
@@ -67,8 +74,11 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         } catch (e) {
             System.println("registerProfile failed: " + e.getErrorMessage());
         }
-        resumeNormal();
     }
+
+    // Unit-test build: no delegate, no profile; the link never scans (not registered).
+    (:withoutBle)
+    private function registerBle() as Void {}
 
     function clock() as Number {
         return System.getTimer();
@@ -263,7 +273,8 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
                 setState(LinkState.LINK_CONNECTED);
             }
         } else if (value == Protocol.STATUS_PENDING) {
-            if (_state != LinkState.LINK_CONFIRM) {
+            // Approval is only expected while pairing; a reconnect never waits for one.
+            if (_pairing && _state != LinkState.LINK_CONFIRM) {
                 setState(LinkState.LINK_CONFIRM);
             }
         } else if (value == Protocol.STATUS_REJECTED) {
@@ -306,7 +317,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         try {
             if (step == :macInfo) {
                 ok = read(_macInfoUuid);
-            } else if (step == :statusRead || step == :cmdStatus) {
+            } else if (step == :statusRead || step == :cmdStatus || step == :cmdHelloStatus) {
                 ok = read(_statusUuid);
             } else if (step == :cccd) {
                 var status = characteristic(_statusUuid);
@@ -417,7 +428,7 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
         var ok = status == BluetoothLowEnergy.STATUS_SUCCESS && value != null;
         if (req.step == :macInfo && characteristic.getUuid().equals(_macInfoUuid)) {
             onMacInfo(ok ? Protocol.decodeMacInfo(value) : null);
-        } else if (characteristic.getUuid().equals(_statusUuid) && (req.step == :statusRead || req.step == :cmdStatus)) {
+        } else if (characteristic.getUuid().equals(_statusUuid) && (req.step == :statusRead || req.step == :cmdStatus || req.step == :cmdHelloStatus)) {
             if (!ok || value.size() < 1) {
                 // The Mac no longer answers (e.g. its service is gone): the link is lost.
                 linkLost();
@@ -425,12 +436,22 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             }
             var v = value[0];
             if (req.step == :statusRead) {
-                if (v == Protocol.STATUS_AWAITING_HELLO) {
-                    linkLost(); // HELLO was not taken at all
+                if (v == Protocol.STATUS_AWAITING_HELLO || (v == Protocol.STATUS_PENDING && !_pairing)) {
+                    // HELLO not taken at all, or the Mac (which forgot this watch) opened an
+                    // approval window for a reconnect: drop it rather than hold the window open.
+                    linkLost();
                     return;
                 }
                 complete(true);
                 applyStatus(v);
+            } else if (req.step == :cmdHelloStatus) {
+                // HELLO write failed: retry the command only if the Mac accepted us anyway.
+                if (v == Protocol.STATUS_ACCEPTED) {
+                    advance(req, :cmdRetry);
+                } else {
+                    complete(false);
+                    applyStatus(v);
+                }
             } else if (v == Protocol.STATUS_AWAITING_HELLO) {
                 advance(req, :cmdHello);
             } else {
@@ -451,7 +472,8 @@ class BleLink extends BluetoothLowEnergy.BleDelegate {
             // Whatever the write status, the Status value tells what the Mac decided.
             advance(req, :statusRead);
         } else if (step == :cmdHello) {
-            advance(req, :cmdRetry);
+            // Written: retry once. Failed: ask Status whether the Mac accepted us.
+            advance(req, ok ? :cmdRetry : :cmdHelloStatus);
         } else if (step == :cmd) {
             if (ok) {
                 complete(true);

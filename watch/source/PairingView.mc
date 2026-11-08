@@ -19,6 +19,7 @@ class PairingView extends WatchUi.View {
     private var _noMacs as Boolean = false;
     private var _lastState as Number;
     private var _visible as Boolean = false;
+    private var _started as Boolean = false;
     private var _timer as Timer.Timer = new Timer.Timer();
 
     // popOnDone: views to pop once paired (this one plus the menus under it).
@@ -29,12 +30,28 @@ class PairingView extends WatchUi.View {
         _lastState = link.state();
     }
 
+    // Pairing starts on the first show only. A later re-show (something was drawn over this view)
+    // catches up with what the link did meanwhile and restarts the phase timer.
     function onShow() as Void {
         _visible = true;
         _link.setOnStateChange(method(:onLinkChange));
-        if (_phase == :list) {
-            restartList();
+        if (!_started) {
+            _started = true;
+            startList();
+        } else if (_phase == :list && !_link.isPairing()) {
+            // Only a successful pairing leaves pairing mode while this view exists.
+            enterPaired();
+        } else if (_phase == :list && _link.state() == LinkState.LINK_REJECTED) {
+            enterRejected();
+        } else if (_phase == :paired) {
+            _timer.start(method(:finish), PAIRED_SHOW_MS, false);
+        } else if (_phase == :rejected) {
+            _timer.start(method(:onRejectedShown), REJECTED_SHOW_MS, false);
+        } else if (!_noMacs) {
+            _timer.start(method(:onNoMacsTimeout), NO_MACS_AFTER_MS, false);
         }
+        _lastState = _link.state();
+        WatchUi.requestUpdate();
     }
 
     // The listener is not cleared here (the view shown next registers its own, and the order of
@@ -80,15 +97,9 @@ class PairingView extends WatchUi.View {
         var state = _link.state();
         if (_phase == :list) {
             if (state == LinkState.LINK_CONNECTED && !_link.isPairing()) {
-                _phase = :paired;
-                Haptics.success();
-                _timer.stop();
-                _timer.start(method(:finish), PAIRED_SHOW_MS, false);
+                enterPaired();
             } else if (state == LinkState.LINK_REJECTED) {
-                _phase = :rejected;
-                Haptics.error();
-                _timer.stop();
-                _timer.start(method(:onRejectedShown), REJECTED_SHOW_MS, false);
+                enterRejected();
             } else if (state == LinkState.LINK_SEARCHING
                     && (_lastState == LinkState.LINK_CONNECTING || _lastState == LinkState.LINK_CONFIRM)) {
                 // Connection failed or approval timed out: back to the list.
@@ -104,7 +115,7 @@ class PairingView extends WatchUi.View {
 
     function onRejectedShown() as Void {
         _phase = :list;
-        restartList();
+        startList();
     }
 
     function onNoMacsTimeout() as Void {
@@ -119,16 +130,31 @@ class PairingView extends WatchUi.View {
         }
     }
 
-    private function restartList() as Void {
-        if (!_link.isPairing() || _link.state() == LinkState.LINK_REJECTED) {
-            _link.startPairing();
-        }
+    // (Re)starts the pairing scan with an empty list: first show and after "Rejected".
+    private function startList() as Void {
+        // startPairing() reports SEARCHING synchronously; with _lastState already SEARCHING that
+        // is not mistaken for a failed connection (no error vibration).
+        _lastState = LinkState.LINK_SEARCHING;
         _index = 0;
         _noMacs = false;
-        _lastState = _link.state();
+        _link.startPairing();
         _timer.stop();
         _timer.start(method(:onNoMacsTimeout), NO_MACS_AFTER_MS, false);
         WatchUi.requestUpdate();
+    }
+
+    private function enterPaired() as Void {
+        _phase = :paired;
+        Haptics.success();
+        _timer.stop();
+        _timer.start(method(:finish), PAIRED_SHOW_MS, false);
+    }
+
+    private function enterRejected() as Void {
+        _phase = :rejected;
+        Haptics.error();
+        _timer.stop();
+        _timer.start(method(:onRejectedShown), REJECTED_SHOW_MS, false);
     }
 
     // ---- Drawing ----

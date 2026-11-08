@@ -5,8 +5,8 @@ import Toybox.WatchUi;
 
 class GarminClickerApp extends Application.AppBase {
     private var _timer as PresentationTimer;
-    // Created with the first view, not in initialize: the unit-test runner instantiates the app
-    // for every test, and the BLE profile can be registered only a few times per process.
+    // Created with the first view. The unit-test build never registers the BLE profile
+    // (BleLink.registerBle is excluded there, see test.jungle).
     private var _link as BleLink? = null;
 
     function initialize() {

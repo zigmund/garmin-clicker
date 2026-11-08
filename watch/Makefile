@@ -4,7 +4,7 @@ KEY     ?= $(HOME)/.connectiq/developer_key.der
 DEVICE  ?= fenix6
 PRODUCTS := fenix6 fenix6pro fenix6s fenix6spro fenix6xpro
 NAME    := GarminClicker
-SRC     := $(shell find source test resources resources-rus -type f) manifest.xml monkey.jungle
+SRC     := $(shell find source test resources resources-rus -type f) manifest.xml monkey.jungle test.jungle
 MONKEYC := "$(SDK)/bin/monkeyc"
 
 .PHONY: build build-all test sim clean
@@ -24,7 +24,7 @@ build-all:
 # Unit-test build, run in the simulator; fails if any test fails.
 test:
 	@mkdir -p bin
-	$(MONKEYC) -f monkey.jungle -d $(DEVICE) -o bin/test.prg -y "$(KEY)" -w -t
+	$(MONKEYC) -f "monkey.jungle;test.jungle" -d $(DEVICE) -o bin/test.prg -y "$(KEY)" -w -t
 	@SDK="$(SDK)" DEVICE="$(DEVICE)" sh scripts/run-tests.sh
 
 sim: bin/$(NAME).prg

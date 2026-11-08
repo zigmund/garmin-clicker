@@ -20,7 +20,9 @@ make -C watch test
 
 Builds with `-t`, starts the simulator if it is not running (and waits until ready), runs
 `monkeydo bin/test.prg fenix6 -t` and fails (non-zero exit) if any test fails. The simulator is
-left running. Test sources live in `test/` and are marked `(:test)`.
+left running. Test sources live in `test/` and are marked `(:test)`. The test build adds
+`test.jungle`, which excludes the `(:withBle)` code (BLE delegate and profile registration): the
+runner instantiates the app for every test, and the simulator has no BLE anyway.
 
 ## Install on the watch
 
