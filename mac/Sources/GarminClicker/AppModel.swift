@@ -17,8 +17,8 @@ import os
 
     // MARK: Observable state
 
-    /// Set by the Bluetooth layer (Task 5); `.unknown` until then.
-    var bluetooth: BluetoothState = .unknown
+    /// Mirror of `BLEPeripheral.bluetooth`, updated by `refresh()`.
+    private(set) var bluetooth: BluetoothState = .unknown
 
     /// Polled every 2 s.
     private(set) var canPostEvents: Bool
@@ -80,6 +80,7 @@ import os
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let environment = SystemEnvironment()
     @ObservationIgnored let controller: PairingController
+    @ObservationIgnored private var ble: BLEPeripheral?
     @ObservationIgnored private var approvalPrompt: ApprovalPrompt?
     @ObservationIgnored private var firstRunPrompt: AnyObject?
     @ObservationIgnored private var shownApproval: ApprovalRequest?
@@ -95,6 +96,13 @@ import os
         l10n = L10n(language: language)
         launchAtLogin = LaunchAtLogin.isEnabled
         canPostEvents = SystemEnvironment().canPostEvents
+        ble = BLEPeripheral(
+            controller: controller,
+            macName: Host.current().localizedName ?? "Mac",
+            onAction: { [weak self] in self?.perform($0) },
+            onApprovalRequest: { [weak self] in self?.presentApproval($0) },
+            onApprovalCancelled: { [weak self] in self?.refresh() },
+            onChange: { [weak self] in self?.controllerChanged() })
         refresh()
         startTicker()
     }
@@ -138,12 +146,13 @@ import os
 
     // MARK: Hooks for the Bluetooth layer
 
-    /// Re-reads controller state into the observable mirror and closes the
-    /// approval window if its request is no longer pending (forget, broadcast
-    /// off, watch unsubscribed — anything that cleared or replaced
+    /// Re-reads controller and Bluetooth state into the observable mirror and
+    /// closes the approval window if its request is no longer pending (forget,
+    /// broadcast off, watch unsubscribed — anything that cleared or replaced
     /// `controller.pendingApproval` without an answer). Call after every
     /// controller change made outside `AppModel`.
     func refresh() {
+        if let ble, bluetooth != ble.bluetooth { bluetooth = ble.bluetooth }
         if pairedWatch != controller.pairedWatch { pairedWatch = controller.pairedWatch }
         if isPairingMode != controller.isPairingModeActive { isPairingMode = controller.isPairingModeActive }
         if connectedName != controller.connectedWatchName { connectedName = controller.connectedWatchName }
@@ -176,9 +185,12 @@ import os
         controllerChanged(sending: controller.resolveApproval(approved: approved))
     }
 
-    /// Single funnel after AppModel changes the controller. Task 5 sends
-    /// `updates` to the watches and refreshes advertising here.
+    /// Single funnel after any controller change: notifies `updates` to the
+    /// watches, brings the service and advertising in line with the new
+    /// state and refreshes the mirror (closing a stale approval window).
     private func controllerChanged(sending updates: [StatusUpdate] = []) {
+        ble?.send(updates)
+        ble?.refreshAdvertising()
         refresh()
     }
 
