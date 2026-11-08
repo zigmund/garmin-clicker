@@ -5,7 +5,7 @@ DEVICE  ?= fenix6pro
 # RELEASE=1: optimized build without debug info (for side-loading onto a watch).
 RELEASE ?=
 PRODUCTS := $(shell sed -n 's/.*<iq:product id="\([^"]*\)".*/\1/p' manifest.xml)
-NAME    := GarminClicker
+NAME    := Clicker
 MONKEYC := "$(SDK)/bin/monkeyc"
 FLAGS   := -w $(if $(RELEASE),-r)
 
