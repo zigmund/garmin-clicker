@@ -8,7 +8,6 @@
 "status.noInputPermission" = "No keyboard control permission";
 "menu.paired" = "Paired: %@";
 "menu.pairWatch" = "Pair Watch…";
-"menu.stopPairing" = "Stop Pairing";
 "menu.forgetWatch" = "Forget Watch";
 "menu.broadcast" = "Broadcasting";
 "menu.keys" = "Keys";
@@ -26,7 +25,13 @@
 "prompt.firstRun.message" = "Start pairing with your Garmin watch now?";
 "prompt.firstRun.yes" = "Start Pairing";
 "prompt.firstRun.no" = "Not Now";
-"approval.title" = "Allow “%@” to connect?";
+"pairing.window.title" = "Pair Watch";
+"pairing.window.instructions" = "On your watch, open Garmin Clicker → Settings → Pairing → Start pairing, then select “%@”.";
+"pairing.window.waiting" = "Waiting for the watch…";
+"pairing.window.request" = "“%@” wants to connect.";
+"pairing.window.paired" = "Paired with “%@”.";
+"pairing.window.close" = "Close";
+"pairing.window.done" = "Done";
 "approval.message" = "This watch will be able to switch slides on this Mac.";
 "approval.replaces" = "It will replace “%@”.";
 "approval.allow" = "Allow";

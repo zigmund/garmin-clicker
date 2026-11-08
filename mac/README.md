@@ -66,31 +66,42 @@ LightBlue). Writes go to Command `8B1F0002-…` (write with response); bytes are
 hex.
 
 1. No watch paired and pairing mode off: the phone does **not** see the Mac.
-2. "Pair Watch…": a device with the Mac's name and UUID `8B1F00A0-…` appears.
+2. "Pair Watch…" opens the "Pair Watch" window (waiting, with the Mac's
+   name in the instructions); a device with the Mac's name and UUID
+   `8B1F00A0-…` appears in the scanner. Pairing mode has no timeout: it
+   lasts while the window is open. "Pair Watch…" again brings the window to
+   the front.
 3. Connect, read MacInfo `8B1F0004-…` (8 bytes ID + Mac name), subscribe to
    Status `8B1F0003-…`.
 4. Write `02` → error `0x80`. Read Status → `00`. The phone must not show a
    system pairing prompt (refusals use application error codes `0x80`/`0x81`).
 5. Write `01 0102030405060708 6970686F6E65` (HELLO "iphone") → success,
-   notify `03`; the Mac shows "Allow “iphone” to connect?".
-6. "Allow" → notify `01`; menu shows "Connected: iphone" and "Paired: iphone";
-   advertising stops (a second scanner does not see the Mac).
+   notify `03`; the window shows "“iphone” wants to connect." with Deny /
+   Allow.
+6. "Allow" → notify `01`; the window shows "Paired with “iphone”." and Done;
+   menu shows "Connected: iphone" and "Paired: iphone"; advertising stops (a
+   second scanner does not see the Mac). "Done" closes the window.
 7. Google Slides in presentation mode: write `02` → next slide, `03` →
-   previous slide. Also right after answering a window (the presentation was
-   frontmost before it): the first key goes to the presentation.
+   previous slide. Also right after closing the pairing window (the
+   presentation was frontmost before it): the first key goes to the
+   presentation.
 8. Revoke Accessibility → write `02` → `0x0E`, the menu shows the warning.
 9. Disconnect → "Waiting for watch…"; the scanner sees a device **without a
    name** with UUID `8B1F0001-…`; reconnect, HELLO with the same ID → notify
    `01` right away, no window.
 10. Outside pairing mode, HELLO with ID `01 1111111111111111` → `0x81`,
     notify `02`, no window. Read Status → `02`.
-11. "Pair Watch…", HELLO with a new ID → window with "It will replace
-    “iphone”." → "Deny" → notify `02`; repeating within a minute → `0x81`,
-    no window.
-12. While the window is open, disconnect from the phone → the window closes.
-    Same with "Stop Pairing" → the window closes, notify `02`; HELLO in a new
-    pairing mode opens a window again (no cooldown).
-13. Pairing mode left idle for 2 min → the named advertisement disappears.
+11. "Pair Watch…", HELLO with a new ID → the request in the window says "It
+    will replace “iphone”." → "Deny" → notify `02`, the window is back to
+    waiting and the Mac is still visible in the scanner; repeating within a
+    minute → `0x81`, the window stays waiting.
+12. While a request is shown, disconnect from the phone → the window goes
+    back to waiting.
+13. While a request is shown, close the window (red close button or ⌘W) →
+    notify `02`, the named advertisement disappears; "Pair Watch…" again and
+    HELLO → a new request (no cooldown). While waiting, "Close" (or Esc) also
+    stops the named advertisement. With a paired watch, unchecking
+    "Broadcasting" while the window is open closes it.
 14. Turn Bluetooth off and on → "Bluetooth is off" and back; advertising
     resumes (also with a paired watch outside pairing mode; a failed start is
     retried after 2…30 s, see the log).

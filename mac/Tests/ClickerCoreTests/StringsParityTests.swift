@@ -16,12 +16,14 @@ struct StringsParityTests {
     static let tableKeys = [
         "status.connected", "status.waiting", "status.notPaired", "status.pairing", "status.paused",
         "status.bluetoothOff", "status.bluetoothUnauthorized", "status.noInputPermission",
-        "menu.paired", "menu.pairWatch", "menu.stopPairing", "menu.forgetWatch", "menu.broadcast",
+        "menu.paired", "menu.pairWatch", "menu.forgetWatch", "menu.broadcast",
         "menu.keys", "keys.arrows", "keys.pageUpDown", "keys.space", "menu.language",
         "language.system", "language.en", "language.ru", "menu.launchAtLogin",
         "menu.grantPermission", "menu.quit",
         "prompt.firstRun.title", "prompt.firstRun.message", "prompt.firstRun.yes", "prompt.firstRun.no",
-        "approval.title", "approval.message", "approval.replaces", "approval.allow", "approval.deny",
+        "pairing.window.title", "pairing.window.instructions", "pairing.window.waiting",
+        "pairing.window.request", "pairing.window.paired", "pairing.window.close", "pairing.window.done",
+        "approval.message", "approval.replaces", "approval.allow", "approval.deny",
     ]
 
     @Test(arguments: ["Localizable", "InfoPlist"])

@@ -14,11 +14,7 @@ struct MenuContent: View {
 
         Divider()
 
-        if model.isPairingMode {
-            Button(l("menu.stopPairing")) { model.stopPairing() }
-        } else {
-            Button(l("menu.pairWatch")) { model.startPairing() }
-        }
+        Button(l("menu.pairWatch")) { model.openPairingWindow() }
         Button(l("menu.forgetWatch")) { model.forgetWatch() }
             .disabled(model.pairedWatch == nil)
         if model.pairedWatch != nil {

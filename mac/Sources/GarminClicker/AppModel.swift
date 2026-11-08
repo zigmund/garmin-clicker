@@ -31,6 +31,7 @@ import os
         didSet {
             defaults.set(language.rawValue, forKey: Key.appLanguage)
             l10n = L10n(language: language)
+            pairingWindow?.setTitle(l10n("pairing.window.title"))
         }
     }
 
@@ -53,6 +54,9 @@ import os
     private(set) var isPairingMode = false
     private(set) var connectedName: String?
     private var broadcastEnabled = true
+
+    /// What the pairing window shows while it is open.
+    private(set) var pairingPhase: PairingPhase = .waiting
 
     var isBroadcastEnabled: Bool {
         get { broadcastEnabled }
@@ -80,10 +84,10 @@ import os
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let environment = SystemEnvironment()
     @ObservationIgnored let controller: PairingController
+    @ObservationIgnored let macName = Host.current().localizedName ?? "Mac"
     @ObservationIgnored private var ble: BLEPeripheral?
-    @ObservationIgnored private var approvalPrompt: ApprovalPrompt?
+    @ObservationIgnored private var pairingWindow: PairingWindow?
     @ObservationIgnored private var firstRunPrompt: AnyObject?
-    @ObservationIgnored private var shownApproval: ApprovalRequest?
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard) {
@@ -98,7 +102,7 @@ import os
         canPostEvents = SystemEnvironment().canPostEvents
         ble = BLEPeripheral(
             controller: controller,
-            macName: Host.current().localizedName ?? "Mac",
+            macName: macName,
             onAction: { [weak self] in self?.perform($0) },
             onApprovalRequest: { [weak self] in self?.presentApproval($0) },
             onApprovalCancelled: { [weak self] in self?.refresh() },
@@ -109,13 +113,30 @@ import os
 
     // MARK: Actions
 
-    func startPairing() {
-        controller.startPairingMode()
-        controllerChanged()
+    /// Opens the pairing window, or brings it to the front, and makes sure
+    /// pairing mode is on. Pairing mode lasts until the window closes.
+    func openPairingWindow() {
+        if !controller.isPairingModeActive {
+            pairingPhase = .waiting
+            controller.startPairingMode()
+            controllerChanged()
+        }
+        showPairingWindow()
     }
 
-    func stopPairing() {
-        controllerChanged(sending: controller.stopPairingMode())
+    /// Closes the pairing window, which stops pairing mode.
+    func closePairingWindow() {
+        pairingWindow?.close()
+    }
+
+    /// Answers the request shown in the pairing window.
+    func answerPairingRequest(_ request: ApprovalRequest, approved: Bool) {
+        // Never resolve a different request than the one the user saw.
+        guard pairingPhase == .request(request), controller.pendingApproval == request else { return }
+        let updates = controller.resolveApproval(approved: approved)
+        // Allow ends pairing mode; Deny keeps waiting for a watch.
+        pairingPhase = approved ? .paired(request.watch) : .waiting
+        controllerChanged(sending: updates)
     }
 
     func forgetWatch() {
@@ -139,16 +160,18 @@ import os
             guard let self else { return }
             firstRunPrompt = nil
             defaults.set(true, forKey: Key.pairingPromptAnswered)
-            if start { startPairing() }
+            if start { openPairingWindow() }
         }
     }
 
     // MARK: Hooks for the Bluetooth layer
 
-    /// Re-reads controller and Bluetooth state into the observable mirror and
-    /// closes the approval window if its request is no longer pending (forget,
-    /// broadcast off, watch unsubscribed — anything that cleared or replaced
-    /// `controller.pendingApproval` without an answer). Call after every
+    /// Re-reads controller and Bluetooth state into the observable mirror.
+    /// The pairing window returns to waiting if its request is no longer
+    /// pending (forget, watch unsubscribed — anything that cleared or
+    /// replaced `controller.pendingApproval` without an answer) and closes if
+    /// pairing mode ended other than by pairing (broadcasting turned off), or
+    /// if the pairing it reports is gone (forget). Call after every
     /// controller change made outside `AppModel`.
     func refresh() {
         if let ble, bluetooth != ble.bluetooth { bluetooth = ble.bluetooth }
@@ -157,61 +180,65 @@ import os
         if connectedName != controller.connectedWatchName { connectedName = controller.connectedWatchName }
         if broadcastEnabled != controller.isBroadcastEnabled { broadcastEnabled = controller.isBroadcastEnabled }
 
-        if let shown = shownApproval, controller.pendingApproval != shown {
-            approvalPrompt?.dismiss()
-            approvalPrompt = nil
-            shownApproval = nil
+        if case let .request(shown) = pairingPhase, controller.pendingApproval != shown {
+            pairingPhase = .waiting
+        }
+        let showsCurrentPairing = if case let .paired(watch) = pairingPhase {
+            controller.pairedWatch == watch
+        } else {
+            false
+        }
+        if pairingWindow != nil, !controller.isPairingModeActive, !showsCurrentPairing {
+            closePairingWindow()
         }
     }
 
-    /// Shows the approval window for a request the controller just created.
+    /// Shows a request the controller just created in the pairing window.
     func presentApproval(_ request: ApprovalRequest) {
         guard controller.pendingApproval == request else { return }
-        approvalPrompt?.dismiss()
-        shownApproval = request
-        approvalPrompt = Prompts.askApproval(request, l10n) { [weak self] approved in
-            self?.answerApproval(request, approved: approved)
-        }
+        pairingPhase = .request(request)
+        showPairingWindow()
     }
 
     // MARK: Private
 
-    private func answerApproval(_ request: ApprovalRequest, approved: Bool) {
-        approvalPrompt = nil
-        shownApproval = nil
-        // Never resolve a different request than the one the user saw.
-        guard controller.pendingApproval == request else { return }
-        controllerChanged(sending: controller.resolveApproval(approved: approved))
+    private func showPairingWindow() {
+        if let pairingWindow {
+            pairingWindow.bringToFront()
+            return
+        }
+        pairingWindow = PairingWindow(model: self) { [weak self] in self?.pairingWindowClosed() }
+    }
+
+    /// The pairing window closed by any means: stop pairing. A pending
+    /// request is rejected, without a cooldown. After a pairing the mode is
+    /// already off and this changes nothing.
+    private func pairingWindowClosed() {
+        pairingWindow = nil
+        pairingPhase = .waiting
+        controllerChanged(sending: controller.stopPairingMode())
     }
 
     /// Single funnel after any controller change: notifies `updates` to the
     /// watches, brings the service and advertising in line with the new
-    /// state and refreshes the mirror (closing a stale approval window).
+    /// state and refreshes the mirror and the pairing window.
     private func controllerChanged(sending updates: [StatusUpdate] = []) {
         ble?.send(updates)
         ble?.refreshAdvertising()
         refresh()
     }
 
-    /// 1 s tick: keeps pairing-mode expiry visible; every 2nd tick polls the
-    /// event posting permission and the login item status (it can change in
-    /// System Settings).
+    /// Every 2 s polls the event posting permission and the login item
+    /// status (both can change in System Settings).
     private func startTicker() {
         ticker = Task { [weak self] in
-            var tick = 0
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
-                tick += 1
-                if tick.isMultiple(of: 2) {
-                    let allowed = environment.canPostEvents
-                    if canPostEvents != allowed { canPostEvents = allowed }
-                    let registered = LaunchAtLogin.isEnabled
-                    if launchAtLogin != registered { launchAtLogin = registered }
-                }
-                if isPairingMode || controller.isPairingModeActive {
-                    controllerChanged()
-                }
+                let allowed = environment.canPostEvents
+                if canPostEvents != allowed { canPostEvents = allowed }
+                let registered = LaunchAtLogin.isEnabled
+                if launchAtLogin != registered { launchAtLogin = registered }
             }
         }
     }
