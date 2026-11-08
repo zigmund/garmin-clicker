@@ -81,6 +81,7 @@ import os
     @ObservationIgnored private let environment = SystemEnvironment()
     @ObservationIgnored let controller: PairingController
     @ObservationIgnored private var approvalPrompt: ApprovalPrompt?
+    @ObservationIgnored private var firstRunPrompt: AnyObject?
     @ObservationIgnored private var shownApproval: ApprovalRequest?
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
@@ -125,10 +126,14 @@ import os
 
     /// First run: offer pairing once when no watch is paired.
     func onLaunch() {
-        guard pairedWatch == nil, !defaults.bool(forKey: Key.pairingPromptAnswered) else { return }
-        let start = Prompts.askStartPairing(l10n)
-        defaults.set(true, forKey: Key.pairingPromptAnswered)
-        if start { startPairing() }
+        guard pairedWatch == nil, firstRunPrompt == nil,
+              !defaults.bool(forKey: Key.pairingPromptAnswered) else { return }
+        firstRunPrompt = Prompts.askStartPairing(l10n) { [weak self] start in
+            guard let self else { return }
+            firstRunPrompt = nil
+            defaults.set(true, forKey: Key.pairingPromptAnswered)
+            if start { startPairing() }
+        }
     }
 
     // MARK: Hooks for the Bluetooth layer
@@ -178,7 +183,8 @@ import os
     }
 
     /// 1 s tick: keeps pairing-mode expiry visible; every 2nd tick polls the
-    /// event posting permission.
+    /// event posting permission and the login item status (it can change in
+    /// System Settings).
     private func startTicker() {
         ticker = Task { [weak self] in
             var tick = 0
@@ -189,6 +195,8 @@ import os
                 if tick.isMultiple(of: 2) {
                     let allowed = environment.canPostEvents
                     if canPostEvents != allowed { canPostEvents = allowed }
+                    let registered = LaunchAtLogin.isEnabled
+                    if launchAtLogin != registered { launchAtLogin = registered }
                 }
                 if isPairingMode || controller.isPairingModeActive {
                     controllerChanged()

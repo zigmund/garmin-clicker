@@ -20,7 +20,6 @@ struct GarminClickerApp: App {
     let model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Let the menu bar item appear before the first-run alert.
-        Task { @MainActor in model.onLaunch() }
+        model.onLaunch()
     }
 }

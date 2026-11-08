@@ -14,7 +14,10 @@ KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 OPENSSL=/usr/bin/openssl
 
 valid_identity() {
-    security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "\"$NAME\""
+    # No pipe into `grep -q`: an early grep exit + pipefail would read as "not found".
+    local identities
+    identities="$(security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null || true)"
+    grep -qF "\"$NAME\"" <<< "$identities"
 }
 
 if valid_identity; then
@@ -45,10 +48,14 @@ keyUsage = critical, digitalSignature
 extendedKeyUsage = critical, codeSigning
 subjectKeyIdentifier = hash
 EOF
-    "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
-        -config "$WORK/cert.cnf" -keyout "$WORK/key.pem" -out "$WORK/cert.pem" 2>/dev/null
+    if ! "$OPENSSL" req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
+        -config "$WORK/cert.cnf" -keyout "$WORK/key.pem" -out "$WORK/cert.pem"; then
+        echo "error: openssl failed to create the certificate." >&2
+        exit 1
+    fi
 
-    P12_PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)"
+    # Throwaway password for the temporary .p12 (no pipeline: SIGPIPE + pipefail).
+    P12_PASSWORD="$("$OPENSSL" rand -hex 16)"
     "$OPENSSL" pkcs12 -export -inkey "$WORK/key.pem" -in "$WORK/cert.pem" \
         -name "$NAME" -out "$WORK/cert.p12" -passout "pass:$P12_PASSWORD"
 
