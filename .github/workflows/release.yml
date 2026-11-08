@@ -63,6 +63,8 @@ jobs:
     name: Watch app
     needs: version
     runs-on: ubuntu-latest
+    # Secrets live in the "release" environment, limited to the main branch.
+    environment: release
     env:
       VERSION: ${{ needs.version.outputs.version }}
       COMMIT: ${{ needs.version.outputs.commit }}
@@ -91,6 +93,8 @@ jobs:
     name: Mac app
     needs: version
     runs-on: macos-26
+    # Secrets live in the "release" environment, limited to the main branch.
+    environment: release
     env:
       VERSION: ${{ needs.version.outputs.version }}
       COMMIT: ${{ needs.version.outputs.commit }}

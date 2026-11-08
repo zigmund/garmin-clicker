@@ -72,9 +72,15 @@ with:
 Every push and pull request runs **CI**: the Mac tests and build, and watch builds for
 one model per screen type (signed with a throwaway key).
 
-### One-time setup: repository secrets
+### One-time setup: release environment and secrets
 
-Settings → Secrets and variables → Actions → New repository secret:
+The secrets live in an environment, not in repository secrets, so only release jobs
+running from `main` can read them:
+
+1. Settings → Environments → New environment `release`; Deployment branches and tags →
+   Selected branches and tags → `main`. Optionally add yourself as a required reviewer
+   (each release then waits for your approval before touching the keys).
+2. Add these as **environment secrets** of `release`:
 
 | Secret | Value |
 |---|---|
