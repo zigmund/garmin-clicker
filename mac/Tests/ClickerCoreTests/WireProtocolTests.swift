@@ -50,6 +50,17 @@ struct WireProtocolTests {
         #expect(DecodeError.badName.att == .invalidAttributeValueLength)
     }
 
+    /// Application error codes (0x80…) so the central's OS never treats a
+    /// refusal as a request to pair or encrypt the link.
+    @Test func attResultCodes() {
+        #expect(ATTResult.success.rawValue == 0x00)
+        #expect(ATTResult.requestNotSupported.rawValue == 0x06)
+        #expect(ATTResult.invalidAttributeValueLength.rawValue == 0x0D)
+        #expect(ATTResult.unlikelyError.rawValue == 0x0E)
+        #expect(ATTResult.helloRequired.rawValue == 0x80)
+        #expect(ATTResult.rejected.rawValue == 0x81)
+    }
+
     @Test func encodeRoundTrip() throws {
         let commands: [Command] = [.next, .previous, .hello(id: watchID, name: "fenix 6")]
         for command in commands {

@@ -105,7 +105,10 @@ public final class PairingController {
     }
 
     /// Current Status value for `central`, as a read of the Status
-    /// characteristic returns it. Matches the last notification sent to it.
+    /// characteristic returns it. Every change of it for a subscribed central
+    /// is reported for notification (`WriteResult.status` or a returned
+    /// `StatusUpdate`); when the session ends (unsubscribe, broadcasting off)
+    /// it silently falls back to `awaitingHello`.
     public func status(for central: UUID) -> LinkStatus {
         if pendingApproval?.central == central { return .pendingApproval }
         guard let session = sessions[central] else { return .awaitingHello }
@@ -127,8 +130,14 @@ public final class PairingController {
         pairingDeadline = now().addingTimeInterval(Self.pairingDuration)
     }
 
-    public func stopPairingMode() {
+    /// Ends pairing mode. A pending approval is cancelled like `forget()`
+    /// does: that central gets `rejected`, without a cooldown.
+    public func stopPairingMode() -> [StatusUpdate] {
         pairingDeadline = nil
+        guard let pending = pendingApproval else { return [] }
+        pendingApproval = nil
+        sessions[pending.central, default: Session()].rejected = true
+        return [StatusUpdate(central: pending.central, status: .rejected)]
     }
 
     // MARK: Central lifecycle
@@ -190,7 +199,7 @@ public final class PairingController {
 
     private func handleSlide(from central: UUID, action: SlideAction) -> WriteResult {
         guard let paired = store.paired, sessions[central]?.helloWatchID == paired.id else {
-            return WriteResult(att: .insufficientAuthentication)
+            return WriteResult(att: .helloRequired)
         }
         guard environment.canPostEvents, !environment.secureInputActive else {
             return WriteResult(att: .unlikelyError)
@@ -213,7 +222,7 @@ public final class PairingController {
             || pendingApproval != nil
         if blocked {
             setHello(central, watchID: nil, rejected: true)
-            return WriteResult(att: .insufficientAuthorization, status: .rejected)
+            return WriteResult(att: .rejected, status: .rejected)
         }
         setHello(central, watchID: nil, rejected: false)
         let request = ApprovalRequest(central: central, watch: watch, replacing: store.paired)
@@ -232,11 +241,21 @@ public final class PairingController {
         guard let pending = pendingApproval else { return [] }
         pendingApproval = nil
         if approved {
+            // Subscribed centrals of the replaced watch lose access.
+            var updates: [StatusUpdate] = []
+            if let old = store.paired, old.id != pending.watch.id {
+                for (central, session) in sessions where session.helloWatchID == old.id {
+                    sessions[central]?.helloWatchID = nil
+                    if session.subscribed {
+                        updates.append(StatusUpdate(central: central, status: .awaitingHello))
+                    }
+                }
+            }
             store.paired = pending.watch
             cooldowns[pending.watch.id] = nil
             setHello(pending.central, watchID: pending.watch.id, rejected: false)
             pairingDeadline = nil
-            return [StatusUpdate(central: pending.central, status: .accepted)]
+            return updates + [StatusUpdate(central: pending.central, status: .accepted)]
         }
         cooldowns[pending.watch.id] = now().addingTimeInterval(Self.denyCooldown)
         sessions[pending.central, default: Session()].rejected = true

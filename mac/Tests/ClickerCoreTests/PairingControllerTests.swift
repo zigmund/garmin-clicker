@@ -41,7 +41,7 @@ struct PairingControllerTests {
     @Test func helloOutsidePairingModeIsRejected() {
         let f = Fixture()
         let r = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
-        #expect(r.att == .insufficientAuthorization)
+        #expect(r.att == .rejected)
         #expect(r.status == .rejected)
         #expect(r.approvalRequest == nil)
     }
@@ -95,7 +95,7 @@ struct PairingControllerTests {
         f.t += 59
         let early = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
         #expect(f.controller.isPairingModeActive)
-        #expect(early.att == .insufficientAuthorization)
+        #expect(early.att == .rejected)
         #expect(early.approvalRequest == nil)
         f.t += 2
         f.controller.startPairingMode()
@@ -108,7 +108,7 @@ struct PairingControllerTests {
         f.controller.startPairingMode()
         _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
         let r = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
-        #expect(r.att == .insufficientAuthorization)
+        #expect(r.att == .rejected)
         #expect(r.status == .rejected)
         #expect(r.approvalRequest == nil)
     }
@@ -138,9 +138,24 @@ struct PairingControllerTests {
         f.controller.centralSubscribed(f.b)
         _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
         _ = f.controller.resolveApproval(approved: true)
-        #expect(f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next)).att == .insufficientAuthentication)
+        #expect(f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next)).att == .helloRequired)
         #expect(f.controller.handleWrite(from: f.b, data: WireCodec.encode(.next)).att == .success)
         #expect(f.controller.connectedWatchName == "B")
+    }
+
+    @Test func approvalReplacingNotifiesOldWatch() {
+        let f = Fixture()
+        f.pairA()
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.b)
+        _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        let updates = f.controller.resolveApproval(approved: true)
+        #expect(updates.count == 2)
+        #expect(updates.contains(StatusUpdate(central: f.b, status: .accepted)))
+        #expect(updates.contains(StatusUpdate(central: f.a, status: .awaitingHello)))
+        for update in updates {
+            #expect(f.controller.status(for: update.central) == update.status)
+        }
     }
 
     @Test func reconnectSamePairedWatchIsAccepted() {
@@ -155,7 +170,7 @@ struct PairingControllerTests {
     @Test func nextBeforeHelloNeedsAuthentication() {
         let f = Fixture()
         let r = f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next))
-        #expect(r.att == .insufficientAuthentication)
+        #expect(r.att == .helloRequired)
         #expect(r.action == nil)
     }
 
@@ -164,7 +179,7 @@ struct PairingControllerTests {
         f.controller.startPairingMode()
         _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
         let r = f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next))
-        #expect(r.att == .insufficientAuthentication)
+        #expect(r.att == .helloRequired)
         #expect(r.action == nil)
     }
 
@@ -212,6 +227,40 @@ struct PairingControllerTests {
         #expect(f.controller.advertisingMode == .off)
     }
 
+    @Test func stopPairingModeEndsPairing() {
+        let unpaired = Fixture()
+        unpaired.controller.startPairingMode()
+        #expect(unpaired.controller.stopPairingMode().isEmpty)
+        #expect(unpaired.controller.isPairingModeActive == false)
+        #expect(unpaired.controller.advertisingMode == .off)
+
+        let paired = Fixture()
+        paired.pairA()
+        _ = paired.controller.centralUnsubscribed(paired.a)
+        paired.controller.startPairingMode()
+        #expect(paired.controller.stopPairingMode().isEmpty)
+        #expect(paired.controller.isPairingModeActive == false)
+        #expect(paired.controller.advertisingMode == .reconnect)
+    }
+
+    @Test func stopPairingModeCancelsPending() {
+        let f = Fixture()
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.b)
+        #expect(f.controller.handleWrite(from: f.b, data: hello(idB, "B")).approvalRequest != nil)
+
+        #expect(f.controller.stopPairingMode() == [StatusUpdate(central: f.b, status: .rejected)])
+        #expect(f.controller.pendingApproval == nil)
+        #expect(f.controller.isPairingModeActive == false)
+        #expect(f.controller.status(for: f.b) == .rejected)
+
+        // No cooldown: a fresh pairing mode lets b open a new request.
+        f.controller.startPairingMode()
+        let r = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        #expect(r.status == .pendingApproval)
+        #expect(r.approvalRequest == ApprovalRequest(central: f.b, watch: PairedWatch(id: idB, name: "B"), replacing: nil))
+    }
+
     @Test func pendingApprovalKeepsPairingModeAlive() {
         let f = Fixture()
         f.controller.startPairingMode()
@@ -231,7 +280,7 @@ struct PairingControllerTests {
         #expect(f.controller.centralUnsubscribed(f.a) == true)
         #expect(f.controller.pendingApproval == nil)
         let again = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
-        #expect(again.att == .insufficientAuthorization)
+        #expect(again.att == .rejected)
         #expect(f.controller.centralUnsubscribed(f.b) == false)
     }
 
@@ -243,7 +292,7 @@ struct PairingControllerTests {
         #expect(f.store.broadcastEnabled == false)
         #expect(f.controller.pairedWatch?.id == idA)
         let r = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
-        #expect(r.att == .insufficientAuthorization)
+        #expect(r.att == .rejected)
         #expect(r.status == .rejected)
     }
 
@@ -283,7 +332,7 @@ struct PairingControllerTests {
         f.pairA()
         #expect(f.controller.forget() == [StatusUpdate(central: f.a, status: .awaitingHello)])
         #expect(f.controller.pairedWatch == nil)
-        #expect(f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next)).att == .insufficientAuthentication)
+        #expect(f.controller.handleWrite(from: f.a, data: WireCodec.encode(.next)).att == .helloRequired)
         #expect(f.controller.advertisingMode == .off)
     }
 

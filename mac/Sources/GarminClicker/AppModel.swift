@@ -115,8 +115,7 @@ import os
     }
 
     func stopPairing() {
-        controller.stopPairingMode()
-        controllerChanged()
+        controllerChanged(sending: controller.stopPairingMode())
     }
 
     func forgetWatch() {
