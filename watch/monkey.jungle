@@ -2,3 +2,37 @@ project.manifest = manifest.xml
 base.sourcePath = source;test;gen
 # Release/device builds drop the unit-test stubs; test.jungle (make test) flips this.
 base.excludeAnnotations = withoutBle
+
+# Launcher icon at each device's native size (base resources carry the 40x40 one).
+fr55.resourcePath = $(fr55.resourcePath);resources-icon35
+fr57042mm.resourcePath = $(fr57042mm.resourcePath);resources-icon54
+fr165.resourcePath = $(fr165.resourcePath);resources-icon54
+fr165m.resourcePath = $(fr165m.resourcePath);resources-icon54
+fr170.resourcePath = $(fr170.resourcePath);resources-icon54
+fr170m.resourcePath = $(fr170m.resourcePath);resources-icon54
+fenix843mm.resourcePath = $(fenix843mm.resourcePath);resources-icon60
+fenixe.resourcePath = $(fenixe.resourcePath);resources-icon60
+fenix9pro43mm.resourcePath = $(fenix9pro43mm.resourcePath);resources-icon60
+epix2.resourcePath = $(epix2.resourcePath);resources-icon60
+epix2pro42mm.resourcePath = $(epix2pro42mm.resourcePath);resources-icon60
+epix2pro47mm.resourcePath = $(epix2pro47mm.resourcePath);resources-icon60
+epix2pro51mm.resourcePath = $(epix2pro51mm.resourcePath);resources-icon60
+marq2.resourcePath = $(marq2.resourcePath);resources-icon60
+marq2aviator.resourcePath = $(marq2aviator.resourcePath);resources-icon60
+fr265.resourcePath = $(fr265.resourcePath);resources-icon60
+fr265s.resourcePath = $(fr265s.resourcePath);resources-icon60
+descentmk343mm.resourcePath = $(descentmk343mm.resourcePath);resources-icon60
+descentmk351mm.resourcePath = $(descentmk351mm.resourcePath);resources-icon60
+descentg2.resourcePath = $(descentg2.resourcePath);resources-icon60
+d2mach1.resourcePath = $(d2mach1.resourcePath);resources-icon60
+descentg1.resourcePath = $(descentg1.resourcePath);resources-icon62
+fenix847mm.resourcePath = $(fenix847mm.resourcePath);resources-icon65
+fenix8pro47mm.resourcePath = $(fenix8pro47mm.resourcePath);resources-icon65
+fenix9pro47mm.resourcePath = $(fenix9pro47mm.resourcePath);resources-icon65
+fenix9pro51mm.resourcePath = $(fenix9pro51mm.resourcePath);resources-icon65
+marq3.resourcePath = $(marq3.resourcePath);resources-icon65
+fr965.resourcePath = $(fr965.resourcePath);resources-icon65
+fr970.resourcePath = $(fr970.resourcePath);resources-icon65
+fr57047mm.resourcePath = $(fr57047mm.resourcePath);resources-icon65
+d2mach2.resourcePath = $(d2mach2.resourcePath);resources-icon65
+d2mach2pro.resourcePath = $(d2mach2pro.resourcePath);resources-icon65
