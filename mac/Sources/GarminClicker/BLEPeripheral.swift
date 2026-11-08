@@ -13,6 +13,10 @@ import os
     private static let statusUUID = CBUUID(string: WireUUID.status)
     private static let macInfoUUID = CBUUID(string: WireUUID.macInfo)
 
+    /// Backoff for retrying a failed service add or advertising start.
+    private static let initialRetryDelay: Duration = .seconds(2)
+    private static let maxRetryDelay: Duration = .seconds(30)
+
     /// What is being advertised; compared to skip redundant restarts.
     private struct Advertisement: Equatable {
         var uuid: String
@@ -44,6 +48,10 @@ import os
     private var subscribers: [UUID: CBCentral] = [:]
     /// Notifications not yet accepted by the transmit queue.
     private var queuedUpdates: [StatusUpdate] = []
+    /// Pending retry after a failure; outside pairing mode nothing else would
+    /// call `refreshAdvertising()` and the watch could never reconnect.
+    private var retryTask: Task<Void, Never>?
+    private var retryDelay = BLEPeripheral.initialRetryDelay
 
     init(controller: PairingController, macName: String,
          onAction: @escaping (SlideAction) -> Void,
@@ -142,6 +150,33 @@ import os
         queuedUpdates.removeAll()
     }
 
+    // MARK: Retry
+
+    /// Logs `failure` and calls `refreshAdvertising()` after the current
+    /// backoff delay (2 s, doubling up to 30 s). A retry already pending
+    /// covers this failure too.
+    private func retryAfter(_ failure: String) {
+        guard retryTask == nil else {
+            Self.log.error("\(failure, privacy: .public); retry already pending")
+            return
+        }
+        let delay = retryDelay
+        Self.log.error("\(failure, privacy: .public); retry in \(delay.components.seconds) s")
+        retryDelay = min(retryDelay * 2, Self.maxRetryDelay)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            retryTask = nil
+            refreshAdvertising()
+        }
+    }
+
+    private func resetRetry() {
+        retryTask?.cancel()
+        retryTask = nil
+        retryDelay = Self.initialRetryDelay
+    }
+
     // MARK: Notifications
 
     private func flushUpdates() {
@@ -176,11 +211,8 @@ import os
     }
 
     nonisolated func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
-        guard let message = error?.localizedDescription else { return }
-        MainActor.assumeIsolated {
-            Self.log.error("Advertising failed: \(message, privacy: .public)")
-            advertisement = nil
-        }
+        let message = error?.localizedDescription
+        MainActor.assumeIsolated { advertisingStarted(error: message) }
     }
 
     nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,
@@ -224,6 +256,7 @@ import os
         default: .unknown
         }
         Self.log.info("Bluetooth state \(state.rawValue)")
+        resetRetry()  // power on republishes anyway; while off there is nothing to retry
         if bluetooth != .poweredOn {
             // The stack dropped services, advertising and links; no
             // unsubscribe callbacks will follow.
@@ -239,16 +272,28 @@ import os
     }
 
     private func serviceAdded(_ added: CBService, error: String?) {
-        guard added === service else { return }  // removed meanwhile
+        // By UUID: the callback need not pass back the same instance.
+        guard added.uuid == Self.serviceUUID, service != nil else { return }  // removed meanwhile
         if let error {
-            Self.log.error("Adding service failed: \(error, privacy: .public)")
             service = nil
             statusCharacteristic = nil
+            retryAfter("Adding service failed: \(error)")
             return
         }
         Self.log.info("Service published")
         isServiceAdded = true
+        retryDelay = Self.initialRetryDelay
         refreshAdvertising()
+    }
+
+    private func advertisingStarted(error: String?) {
+        guard let error else {
+            resetRetry()
+            return
+        }
+        manager.stopAdvertising()
+        advertisement = nil
+        retryAfter("Advertising failed: \(error)")
     }
 
     private func subscribed(_ central: CBCentral) {
@@ -307,6 +352,8 @@ import os
             if let status = write.status { updates.append(StatusUpdate(central: central, status: status)) }
             if let approval = write.approvalRequest { approvals.append(approval) }
         }
+        // CBATTError.Code is a non-frozen imported enum: init(rawValue:)
+        // accepts any value, including the application codes 0x80/0x81.
         manager.respond(to: first, withResult: CBATTError.Code(rawValue: Int(result.rawValue)) ?? .unlikelyError)
         send(updates)
         approvals.forEach(onApprovalRequest)

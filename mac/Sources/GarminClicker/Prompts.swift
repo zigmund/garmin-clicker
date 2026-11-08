@@ -38,8 +38,13 @@ enum Prompts {
 /// apps' fullscreen spaces (presentations), closable programmatically.
 /// Return = confirm, Esc = cancel.
 @MainActor private final class FloatingAlert: NSObject, ApprovalPrompt {
+    /// Alerts on screen. These are the app's only windows (the menu is an
+    /// `NSMenu`), so none open means no app window is visible.
+    private static var shownCount = 0
+
     private let alert = NSAlert()
     private var completion: ((Bool) -> Void)?
+    private var isShown = false
 
     init(title: String, message: String, confirm: String, cancel: String,
          completion: @escaping (Bool) -> Void) {
@@ -62,13 +67,16 @@ enum Prompts {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hidesOnDeactivate = false
         window.center()
+        if NSApp.isHidden { NSApp.unhide(nil) }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        isShown = true
+        Self.shownCount += 1
     }
 
     func dismiss() {
         completion = nil
-        alert.window.orderOut(nil)
+        close()
     }
 
     @objc private func confirmPressed() { answer(true) }
@@ -77,9 +85,21 @@ enum Prompts {
     private func answer(_ confirmed: Bool) {
         guard let completion else { return }
         self.completion = nil
-        alert.window.orderOut(nil)
+        close()
         // The completion usually drops the owner's last reference to us;
         // stay alive until this button action returns.
         withExtendedLifetime(self) { completion(confirmed) }
+    }
+
+    /// Hides the window. Closing the last one hides the app: an `LSUIElement`
+    /// app stays active after its window goes away, so the next synthesized
+    /// key press would reach us instead of the presentation. Hiding hands
+    /// activation back to the previously active app.
+    private func close() {
+        guard isShown else { return }
+        isShown = false
+        alert.window.orderOut(nil)
+        Self.shownCount -= 1
+        if Self.shownCount == 0 { NSApp.hide(nil) }
     }
 }

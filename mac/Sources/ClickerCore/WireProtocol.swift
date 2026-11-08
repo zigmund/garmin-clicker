@@ -14,14 +14,18 @@ public enum Command: Equatable, Sendable {
     case previous
 }
 
-/// ATT result codes returned to the watch on a Command write.
+/// ATT result codes returned to the watch on a Command write. Refusals use
+/// application error codes (0x80…0x9F): the standard insufficient
+/// authentication/authorization codes make the central's OS start pairing.
 public enum ATTResult: UInt8, Sendable {
     case success = 0x00
-    case insufficientAuthentication = 0x05
     case requestNotSupported = 0x06
-    case insufficientAuthorization = 0x08
     case invalidAttributeValueLength = 0x0D
     case unlikelyError = 0x0E
+    /// NEXT/PREV without an accepted HELLO in this session.
+    case helloRequired = 0x80
+    /// HELLO refused (not paired and not pairing mode, cooldown, another request open).
+    case rejected = 0x81
 }
 
 public enum DecodeError: Error, Equatable, Sendable {

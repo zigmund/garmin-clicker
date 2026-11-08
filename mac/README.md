@@ -21,6 +21,14 @@ make -C mac clean
 
 The app lives in the menu bar only (no Dock icon).
 
+For daily use and "Launch at Login", copy the app to `/Applications`:
+`make clean` and `make app` delete and replace `mac/build/…`, which would
+leave the login item pointing at a missing or different app.
+
+```sh
+make -C mac app && ditto "mac/build/Garmin Clicker.app" "/Applications/Garmin Clicker.app"
+```
+
 ## Code signing (once)
 
 macOS ties the Accessibility permission to the app's signature. With ad-hoc
@@ -61,26 +69,31 @@ hex.
 2. "Pair Watch…": a device with the Mac's name and UUID `8B1F00A0-…` appears.
 3. Connect, read MacInfo `8B1F0004-…` (8 bytes ID + Mac name), subscribe to
    Status `8B1F0003-…`.
-4. Write `02` → error `0x05`. Read Status → `00`.
+4. Write `02` → error `0x80`. Read Status → `00`. The phone must not show a
+   system pairing prompt (refusals use application error codes `0x80`/`0x81`).
 5. Write `01 0102030405060708 6970686F6E65` (HELLO "iphone") → success,
    notify `03`; the Mac shows "Allow “iphone” to connect?".
 6. "Allow" → notify `01`; menu shows "Connected: iphone" and "Paired: iphone";
    advertising stops (a second scanner does not see the Mac).
 7. Google Slides in presentation mode: write `02` → next slide, `03` →
-   previous slide.
+   previous slide. Also right after answering a window (the presentation was
+   frontmost before it): the first key goes to the presentation.
 8. Revoke Accessibility → write `02` → `0x0E`, the menu shows the warning.
 9. Disconnect → "Waiting for watch…"; the scanner sees a device **without a
    name** with UUID `8B1F0001-…`; reconnect, HELLO with the same ID → notify
    `01` right away, no window.
-10. Outside pairing mode, HELLO with ID `01 1111111111111111` → `0x08`,
+10. Outside pairing mode, HELLO with ID `01 1111111111111111` → `0x81`,
     notify `02`, no window. Read Status → `02`.
 11. "Pair Watch…", HELLO with a new ID → window with "It will replace
-    “iphone”." → "Deny" → notify `02`; repeating within a minute → `0x08`,
+    “iphone”." → "Deny" → notify `02`; repeating within a minute → `0x81`,
     no window.
 12. While the window is open, disconnect from the phone → the window closes.
+    Same with "Stop Pairing" → the window closes, notify `02`; HELLO in a new
+    pairing mode opens a window again (no cooldown).
 13. Pairing mode left idle for 2 min → the named advertisement disappears.
 14. Turn Bluetooth off and on → "Bluetooth is off" and back; advertising
-    resumes.
+    resumes (also with a paired watch outside pairing mode; a failed start is
+    retried after 2…30 s, see the log).
 15. "Forget Watch" while connected → notify `00`; the Mac stops advertising.
 16. Uncheck "Broadcasting" while the phone is connected → the scanner does not
     see the Mac, writes to Command from the phone fail; status "Broadcasting
