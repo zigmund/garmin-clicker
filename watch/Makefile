@@ -48,11 +48,17 @@ iq: $(GEN)
 	$(MONKEYC) -f monkey.jungle -e -r -w -o bin/$(NAME).iq -y "$(KEY)"
 
 # Release files: the store package and a zip of per-model .prg files with a README.
+# The .iq is a 7z archive with <part number>/Clicker.prg per part number, byte-identical to a
+# RELEASE=1 build, so the .prg files are taken from it and every model is compiled only once.
 dist: iq
-	$(MAKE) build-all RELEASE=1
-	rm -rf $(DIST) bin/prg
-	mkdir -p $(DIST) bin/prg
-	@for d in $(PRODUCTS); do cp bin/$$d/$(NAME).prg bin/prg/$$d.prg; done
+	rm -rf $(DIST) bin/prg bin/iq
+	mkdir -p $(DIST) bin/prg bin/iq
+	bsdtar -xf bin/$(NAME).iq -C bin/iq
+	@for d in $(PRODUCTS); do \
+		pn=$$(grep -o '"number": *"[^"]*"' "$(DEVICES_DIR)/$$d/compiler.json" | head -1 | sed 's/.*"\([^"]*\)"$$/\1/'); \
+		test -n "$$pn" && test -f "bin/iq/$$pn/$(NAME).prg" || { echo "$$d: no .prg for part number '$$pn' in $(NAME).iq" >&2; exit 1; }; \
+		cp "bin/iq/$$pn/$(NAME).prg" bin/prg/$$d.prg; \
+	done
 	sh scripts/prg-readme.sh "$(DEVICES_DIR)" "$(VERSION)" $(PRODUCTS) > bin/prg/README.txt
 	cd bin/prg && zip -q -X ../../$(DIST)/$(NAME)-$(VERSION)-watch-prg.zip README.txt *.prg
 	cp bin/$(NAME).iq $(DIST)/$(NAME)-$(VERSION).iq
