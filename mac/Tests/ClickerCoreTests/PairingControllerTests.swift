@@ -306,6 +306,91 @@ struct PairingControllerTests {
         #expect(r.approvalRequest == ApprovalRequest(central: f.b, watch: PairedWatch(id: idB, name: "B"), replacing: nil))
     }
 
+    // MARK: Status read (the watch reads Status after a failed write)
+
+    @Test func statusOfUnknownCentralIsAwaitingHello() {
+        let f = Fixture()
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+        f.controller.centralSubscribed(f.a)
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+    }
+
+    @Test func statusFollowsApprovalFlow() {
+        let f = Fixture()
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.a)
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        #expect(f.controller.status(for: f.a) == .pendingApproval)
+        _ = f.controller.resolveApproval(approved: true)
+        #expect(f.controller.status(for: f.a) == .accepted)
+    }
+
+    @Test func statusAfterDenyIsRejected() {
+        let f = Fixture()
+        f.controller.startPairingMode()
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        _ = f.controller.resolveApproval(approved: false)
+        #expect(f.controller.status(for: f.a) == .rejected)
+    }
+
+    @Test func statusAfterRejectedHelloIsRejected() {
+        let f = Fixture()
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        #expect(f.controller.status(for: f.a) == .rejected)
+
+        f.controller.startPairingMode()
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        #expect(f.controller.status(for: f.a) == .pendingApproval)
+        #expect(f.controller.status(for: f.b) == .rejected)
+    }
+
+    @Test func statusOfReconnectedPairedWatchIsAccepted() {
+        let f = Fixture()
+        f.pairA()
+        let c = UUID()
+        f.controller.centralSubscribed(c)
+        #expect(f.controller.status(for: c) == .awaitingHello)
+        _ = f.controller.handleWrite(from: c, data: hello(idA, "A"))
+        #expect(f.controller.status(for: c) == .accepted)
+    }
+
+    @Test func statusResetsOnUnsubscribeAndBroadcastOff() {
+        let f = Fixture()
+        f.pairA()
+        #expect(f.controller.centralUnsubscribed(f.a) == false)
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+
+        f.controller.centralSubscribed(f.a)
+        _ = f.controller.handleWrite(from: f.a, data: hello(idA, "A"))
+        f.controller.isBroadcastEnabled = false
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+    }
+
+    @Test func statusAfterForgetMatchesNotifications() {
+        let f = Fixture()
+        f.pairA()
+        f.controller.startPairingMode()
+        f.controller.centralSubscribed(f.b)
+        _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        let updates = f.controller.forget()
+        for update in updates {
+            #expect(f.controller.status(for: update.central) == update.status)
+        }
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+        #expect(f.controller.status(for: f.b) == .rejected)
+    }
+
+    @Test func replacedWatchStatusIsNoLongerAccepted() {
+        let f = Fixture()
+        f.pairA()
+        f.controller.startPairingMode()
+        _ = f.controller.handleWrite(from: f.b, data: hello(idB, "B"))
+        _ = f.controller.resolveApproval(approved: true)
+        #expect(f.controller.status(for: f.b) == .accepted)
+        #expect(f.controller.status(for: f.a) == .awaitingHello)
+    }
+
     @Test func macIDProxiesStore() {
         let f = Fixture()
         #expect(f.controller.macID == f.store.macID)
