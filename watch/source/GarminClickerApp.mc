@@ -5,12 +5,19 @@ import Toybox.WatchUi;
 
 class GarminClickerApp extends Application.AppBase {
     private var _timer as PresentationTimer;
-    private var _link as LinkStub;
+    // Created with the first view, not in initialize: the unit-test runner instantiates the app
+    // for every test, and the BLE profile can be registered only a few times per process.
+    private var _link as BleLink? = null;
 
     function initialize() {
         AppBase.initialize();
         _timer = new PresentationTimer(method(:clock));
-        _link = new LinkStub();
+    }
+
+    function onStop(state as Dictionary?) as Void {
+        if (_link != null) {
+            (_link as BleLink).shutdown();
+        }
     }
 
     function clock() as Number {
@@ -22,6 +29,8 @@ class GarminClickerApp extends Application.AppBase {
     }
 
     function getInitialView() as [Views] or [Views, InputDelegates] {
-        return [new MainView(_timer, _link), new MainDelegate(_timer, _link, method(:redraw))];
+        var link = new BleLink();
+        _link = link;
+        return [new MainView(_timer, link), new MainDelegate(_timer, link, method(:redraw))];
     }
 }

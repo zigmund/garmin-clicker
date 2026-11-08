@@ -1,6 +1,6 @@
 import Toybox.Lang;
 
-// Connection states shown on the main screen. Shared by LinkStub and (W5) BleLink.
+// Connection states reported by BleLink and shown on the main and pairing screens.
 module LinkState {
     enum {
         LINK_NOT_PAIRED = 0,

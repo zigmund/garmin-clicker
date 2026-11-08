@@ -22,23 +22,31 @@ module Menus {
         WatchUi.pushView(d.menu(), d, WatchUi.SLIDE_UP);
     }
 
-    function promptPairing(link) as Void {
-        WatchUi.pushView(new WatchUi.Confirmation(L10n.t("prompt_pair_now")), new PairPromptDelegate(link), WatchUi.SLIDE_UP);
+    // onYes runs when the user accepts; the caller opens the pairing screen once the
+    // confirmation is gone (pushing a view from onResponse would race its pop).
+    function promptPairing(onYes as Method() as Void) as Void {
+        WatchUi.pushView(new WatchUi.Confirmation(L10n.t("prompt_pair_now")), new PairPromptDelegate(onYes), WatchUi.SLIDE_UP);
+    }
+
+    // popOnDone: views to pop after a successful pairing (the pairing screen and those under it).
+    function openPairing(link, popOnDone as Number) as Void {
+        var view = new PairingView(link, popOnDone);
+        WatchUi.pushView(view, new PairingDelegate(view), WatchUi.SLIDE_LEFT);
     }
 }
 
 class PairPromptDelegate extends WatchUi.ConfirmationDelegate {
-    private var _link;
+    private var _onYes as Method() as Void;
 
-    function initialize(link) {
+    function initialize(onYes as Method() as Void) {
         ConfirmationDelegate.initialize();
-        _link = link;
+        _onYes = onYes;
     }
 
     function onResponse(response as Confirm) as Boolean {
         Settings.setPairingPromptAnswered();
         if (response == WatchUi.CONFIRM_YES) {
-            _link.startPairing();
+            _onYes.invoke();
         }
         return true;
     }
@@ -229,11 +237,8 @@ class PairingMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
         if (id == :start) {
-            _link.startPairing();
-            // Leave pairing, settings and main menus; the link takes over the screen.
-            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
-            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
-            WatchUi.popView(WatchUi.SLIDE_DOWN);
+            // Once paired, pop the pairing screen plus pairing, settings and main menus.
+            Menus.openPairing(_link, 4);
         } else if (id == :forget) {
             WatchUi.pushView(new WatchUi.Confirmation(L10n.t("pairing_forget_confirm")), new ForgetDelegate(_link, self), WatchUi.SLIDE_UP);
         }

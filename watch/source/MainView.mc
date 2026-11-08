@@ -8,8 +8,8 @@ class MainView extends WatchUi.View {
     private var _timer;
     private var _link;
     private var _ticker as Timer.Timer? = null;
-    private var _lastState as Number = -1;
     private var _promptPending as Boolean;
+    private var _openPairing as Boolean = false;
 
     function initialize(timer, link) {
         View.initialize();
@@ -19,26 +19,51 @@ class MainView extends WatchUi.View {
     }
 
     function onShow() as Void {
+        _link.setOnStateChange(method(:onLinkChange));
         // First-run question: once, and only now that the main view is actually on top.
         if (_promptPending) {
             _promptPending = false;
-            Menus.promptPairing(_link);
+            Menus.promptPairing(method(:onPairNow));
+        } else if (_openPairing) {
+            _openPairing = false;
+            Menus.openPairing(_link, 1);
         }
-        _ticker = new Timer.Timer();
-        (_ticker as Timer.Timer).start(method(:onTick), 1000, true);
+        updateTicker();
     }
 
     function onHide() as Void {
-        if (_ticker != null) {
-            (_ticker as Timer.Timer).stop();
-            _ticker = null;
+        stopTicker();
+    }
+
+    // "Pair now?" answered yes: open the pairing screen when the confirmation has closed.
+    function onPairNow() as Void {
+        _openPairing = true;
+    }
+
+    function onLinkChange() as Void {
+        WatchUi.requestUpdate();
+    }
+
+    function onTick() as Void {
+        WatchUi.requestUpdate();
+    }
+
+    // The 1 Hz redraw runs only while the timer runs; link changes redraw via onLinkChange.
+    private function updateTicker() as Void {
+        if (_timer.isRunning()) {
+            if (_ticker == null) {
+                _ticker = new Timer.Timer();
+                (_ticker as Timer.Timer).start(method(:onTick), 1000, true);
+            }
+        } else {
+            stopTicker();
         }
     }
 
-    // Once a second while the timer runs, and whenever the link state changes.
-    function onTick() as Void {
-        if (_timer.isRunning() || _link.state() != _lastState) {
-            WatchUi.requestUpdate();
+    private function stopTicker() as Void {
+        if (_ticker != null) {
+            (_ticker as Timer.Timer).stop();
+            _ticker = null;
         }
     }
 
@@ -48,8 +73,8 @@ class MainView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         dc.clear();
 
+        updateTicker();
         var state = _link.state();
-        _lastState = state;
         var statusColor = state == LinkState.LINK_CONNECTED ? Graphics.COLOR_GREEN
             : (state == LinkState.LINK_REJECTED ? Graphics.COLOR_RED : Graphics.COLOR_YELLOW);
         dc.setColor(statusColor, Graphics.COLOR_TRANSPARENT);
